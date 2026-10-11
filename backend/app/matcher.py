@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+from datetime import datetime
+
+from app.clock import aware
 
 
 @dataclass
@@ -97,12 +100,54 @@ def rank_lenders(need: NeedPoint, inventory: list[LenderItem], distance_limit: f
     ]
 
 
+def _moment(value):
+    """Datetimes, ISO strings and plain numbers. Naive datetimes count as UTC."""
+    if isinstance(value, datetime):
+        return aware(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return aware(datetime.fromisoformat(text))
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def _span(window):
+    """A window is a [start, end] pair or a {"start", "end"} object."""
+    if isinstance(window, dict):
+        start, end = window.get("start"), window.get("end")
+    elif isinstance(window, (list, tuple)) and len(window) == 2:
+        start, end = window
+    else:
+        return None
+    start, end = _moment(start), _moment(end)
+    if start is None or end is None:
+        return None
+    return start, end
+
+
 def _time_fit(need: NeedPoint, item: LenderItem) -> float | None:
-    if not item.windows or need.window_start is None or need.window_end is None:
+    if not item.windows:
+        return 1
+    need_start, need_end = _moment(need.window_start), _moment(need.window_end)
+    if need_start is None or need_end is None:
         return 1
     best = None
-    for start, end in item.windows:
-        amount = overlap_seconds(need.window_start, need.window_end, start, end)
+    for window in item.windows:
+        span = _span(window)
+        if span is None:
+            continue
+        try:
+            amount = overlap_seconds(need_start, need_end, span[0], span[1])
+        except TypeError:
+            continue
         if amount is None:
             continue
         best = amount if best is None else max(best, amount)
