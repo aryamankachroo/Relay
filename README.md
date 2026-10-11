@@ -73,3 +73,26 @@ export default defineConfig([
 ])
 
 ```
+
+## Clerk authentication
+
+Relay now uses React Router framework mode. `app/root.tsx` configures Clerk's
+server middleware, authentication loader, and provider. The login and sign-up
+routes use Clerk components inside the existing neighborhood UI.
+
+Set `VITE_CLERK_PUBLISHABLE_KEY` and the server-only `CLERK_SECRET_KEY` in
+`.env.local` for development. Never commit this file or prefix the secret key
+with `VITE_`. The keys must belong to the same Clerk instance.
+
+Run `npm run dev` to preview, `npm run build` to typecheck and build, and
+`npx --yes clerk@latest doctor` to check the Clerk connection. The build is
+written to `build/client` and `build/server`; it now requires a Node server
+instead of static Vite hosting. To run it with local development keys:
+
+```sh
+node --env-file=.env.local node_modules/@react-router/serve/bin.js ./build/server/index.js
+```
+
+In deployment, provide both Clerk keys through the server environment and run
+`npm start`. Successful sign-in currently displays the account controls;
+neighborhood features remain a frontend demo.

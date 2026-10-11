@@ -23,6 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# React Router generated output
+.react-router/
+build/
+
 # Backend
 backend/.env
 backend/.venv

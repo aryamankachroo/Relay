@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../");
 
 /* Relay tokens. Edit these to restyle the app. */
 
@@ -148,67 +148,11 @@
   }
 
   .atmosphere {
-    position: absolute;
+    position: fixed;
     inset: 0;
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
-  }
-
-  .atmosphere-glow {
-    position: absolute;
-    inset: auto -10% 0;
-    height: 42%;
-    background:
-      radial-gradient(
-        ellipse at 70% 100%,
-        color-mix(in srgb, var(--relay-color-white) 55%, transparent),
-        transparent 62%
-      ),
-      radial-gradient(
-        ellipse at 18% 80%,
-        color-mix(in srgb, var(--relay-color-mint-300) 45%, transparent),
-        transparent 58%
-      );
-  }
-
-  .bubble {
-    position: absolute;
-    border: 1px solid color-mix(in srgb, var(--relay-color-white) 75%, transparent);
-    border-radius: var(--relay-radius-pill);
-    background: radial-gradient(
-      circle at 32% 30%,
-      color-mix(in srgb, var(--relay-color-white) 95%, transparent),
-      color-mix(in srgb, var(--relay-color-white) 25%, transparent) 42%,
-      color-mix(in srgb, var(--relay-color-aqua-500) 18%, transparent) 72%
-    );
-    box-shadow: inset 0 -6px 10px color-mix(in srgb, var(--relay-color-sky-500) 18%, transparent);
-    animation: bubble-float 7s ease-in-out infinite alternate;
-  }
-
-  .bubble-a {
-    top: 7rem;
-    right: 8%;
-    width: 2.5rem;
-    height: 2.5rem;
-  }
-
-  .bubble-b {
-    top: 10.5rem;
-    right: 15%;
-    width: 1.05rem;
-    height: 1.05rem;
-    animation-duration: 6s;
-    animation-delay: -2s;
-  }
-
-  .bubble-c {
-    right: 5%;
-    bottom: 14%;
-    width: 1.55rem;
-    height: 1.55rem;
-    animation-duration: 8s;
-    animation-delay: -1s;
   }
 
   .app-frame {
@@ -710,23 +654,9 @@
   }
 }
 
-@keyframes bubble-float {
-  from {
-    transform: translateY(0);
-  }
-
-  to {
-    transform: translateY(-8px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   body {
     background-attachment: scroll;
-  }
-
-  .bubble {
-    animation: none;
   }
 
   .nav-pill,
@@ -739,3 +669,178 @@
     transform: none;
   }
 }
+
+/* ACA's scene palette is scoped so it does not replace Relay's UI tokens. */
+.neighborhood-scene {
+  --sky: var(--relay-color-sky-500);
+  --aqua: var(--relay-color-turquoise-500);
+  --leaf: var(--relay-color-leaf-500);
+  --sun: #facc15;
+  --rose: #ee91a3;
+  --ink: var(--relay-color-ink);
+  --ink-soft: var(--relay-color-ink-soft);
+  --highlight: #fff;
+  --window: #fff2a6;
+  --tile: #c2f1de;
+  --road: #edf7fa;
+  --shadow-cast: #4387a447;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #7dd3fc, #a5f3fc 45%, #f0fbff);
+}
+
+.town-map {
+  position: absolute;
+  left: 50%;
+  bottom: -5svh;
+  width: max(100vw, 135svh);
+  max-width: none;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  transform: translateX(-50%);
+}
+
+.town-sun {
+  position: absolute;
+  top: -12rem;
+  right: -12rem;
+  width: 38rem;
+  height: 38rem;
+  background: radial-gradient(circle, #fff 0 12%, #fff5b7a6 22%, transparent 65%);
+}
+
+.town-cloud {
+  position: absolute;
+  left: -15rem;
+  width: 14rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: #ffffffb3;
+  box-shadow: 2rem -1rem 0 #ffffffb3, 5rem 0.3rem 0 #ffffff99;
+  filter: blur(2px);
+  animation: town-cloud-drift 100s linear infinite;
+}
+.town-cloud-a { top: 10%; animation-delay: -25s; }
+.town-cloud-b { top: 20%; animation-duration: 130s; animation-delay: -85s; }
+.town-fog {
+  position: absolute;
+  inset: auto 0 0;
+  height: 13%;
+  background: linear-gradient(0deg, #f0fbff, transparent);
+}
+
+.town-stroller {
+  transform: translate(var(--walk-start-x), var(--walk-start-y));
+  animation: town-stroll var(--walk-duration) linear var(--walk-delay) infinite;
+}
+.town-figure-facing {
+  animation: town-turn var(--walk-duration) steps(1, end) var(--walk-delay) infinite;
+}
+.town-figure-bob { animation: town-bob 0.275s ease-in-out infinite; }
+.town-limb { animation: town-gait 0.55s ease-in-out infinite; }
+.town-leg-left { transform-origin: -3px -14px; }
+.town-leg-right { transform-origin: 3px -14px; animation-delay: -0.275s; }
+.town-arm-left { transform-origin: -6px -26px; animation-delay: -0.275s; }
+.town-arm-right { transform-origin: 6px -26px; }
+
+@keyframes town-stroll {
+  0%, 100% { transform: translate(var(--walk-start-x), var(--walk-start-y)); }
+  50% { transform: translate(var(--walk-end-x), var(--walk-end-y)); }
+}
+@keyframes town-turn {
+  0%, 100% { transform: scaleX(-1); }
+  50% { transform: scaleX(1); }
+}
+@keyframes town-gait {
+  0%, 100% { transform: rotate(22deg); }
+  50% { transform: rotate(-22deg); }
+}
+@keyframes town-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+@keyframes town-cloud-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(100vw + 30rem)); }
+}
+
+@media (max-width: 959px) {
+  .town-map { width: max(100vw, 760px); bottom: 6svh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neighborhood-scene *, .town-limb { animation: none; }
+  .town-cloud-a { left: 12%; }
+  .town-cloud-b { left: 65%; }
+}
+
+/* Entry flow: the town stays mounted behind both the intro and login. */
+.relay-intro {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  background: #e8fbff55;
+}
+.intro-copy { position: relative; text-align: center; padding: 1rem; }
+.intro-copy h1 {
+  font-size: clamp(5rem, 13vw, 9rem);
+  font-weight: 900;
+  line-height: 1;
+  animation: intro-wordmark 1s 1.2s ease-out both;
+}
+.intro-copy h1, .login-brand span {
+  display: inline-block;
+  padding: 0.05em 0.25em 0.22em 0.08em;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-style: italic;
+  font-weight: 900;
+  background: linear-gradient(180deg, #62d9c4 0%, #209f94 38%, #b9f9e9 46%, #167e76 54%, #0c756e 78%, #31bfa3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 0 #ffffffb3) drop-shadow(0 3px 5px #0c756e26);
+}
+.intro-copy p { margin-top: 1.25rem; font-size: clamp(0.95rem, 2vw, 1.15rem); font-weight: 700; animation: entry-appear 0.7s 2s both; }
+.login-page { position: relative; z-index: 1; min-height: 100svh; display: grid; place-items: center; padding: 6rem 1.25rem 3rem; }
+.login-brand { position: absolute; top: 1.5rem; left: 2rem; font-size: 2.6rem; font-weight: 900; letter-spacing: -0.05em; line-height: 1; }
+.auth-switch { margin-top: 1.3rem; text-align: center; font-size: 0.9rem; color: var(--relay-color-ink-soft); }
+.auth-switch a { color: var(--relay-color-leaf-700); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.auth-switch a:focus-visible { outline: 3px solid var(--relay-color-sky-700); outline-offset: 3px; border-radius: 3px; }
+.login-content { width: min(100%, 25rem); animation: entry-appear 0.65s ease-out both; }
+.login-card { padding: 2rem; background-color: #ffffffb8; }
+.login-card h1 { margin-top: 0.35rem; font-size: clamp(1.9rem, 5vw, 2.4rem); font-weight: 900; letter-spacing: -0.055em; line-height: 1.2; }
+.login-card h1:focus { outline: none; }
+.login-description { margin-top: 0.8rem; color: var(--relay-color-ink-soft); }
+.login-form { display: grid; gap: 1.15rem; margin-top: 1.65rem; }
+.login-field { display: grid; gap: 0.4rem; }
+.login-field label { font-size: 0.85rem; font-weight: 800; }
+.login-field input { width: 100%; min-height: 3rem; padding: 0.75rem 0.9rem; border: 1px solid var(--relay-border-soft); border-radius: 0.85rem; background: #ffffffcf; font-size: 1rem; }
+.login-field input::placeholder { color: #617b88; }
+.login-password { position: relative; }
+.login-password input { padding-right: 3rem; }
+.login-password button { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 3rem; height: 3rem; cursor: pointer; color: var(--relay-color-ink-soft); }
+.login-submit { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 3rem; border-radius: 999px; color: white; background: var(--relay-gradient-leaf); box-shadow: var(--relay-shadow-soft); font-weight: 800; cursor: pointer; }
+.login-submit:hover { filter: brightness(1.08); }
+.login-submit:focus-visible, .login-field input:focus-visible, .login-password button:focus-visible { outline: 3px solid var(--relay-color-sky-700); outline-offset: 3px; }
+.login-status { color: var(--relay-color-ink-soft); font-size: 0.85rem; }
+.login-status:empty { display: none; }
+.login-tagline { margin-top: 1.25rem; text-align: center; font-size: 0.85rem; font-weight: 700; text-shadow: 0 1px 8px white, 0 1px 2px white; }
+@keyframes entry-appear { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 599px) {
+  .login-page { place-items: start center; padding-top: 6rem; padding-bottom: 5rem; }
+  .login-brand { left: 1.25rem; top: 1.25rem; }
+  .login-card { padding: 1.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-copy h1, .intro-copy p, .login-content { animation: none; }
+}
+
+@keyframes intro-wordmark { from { opacity: 0; filter: blur(16px); letter-spacing: 0.2em; } to { opacity: 1; filter: blur(0px); letter-spacing: -0.05em; } }
+
+.relay-auth-form { margin-top: 1.5rem; }
+.relay-auth-form .relay-clerk-root, .relay-auth-form .relay-clerk-card { width: 100%; max-width: 100%; }
+.relay-auth-form .relay-clerk-card { box-shadow: none; border: 0; background: transparent; }
+.relay-auth-form .relay-clerk-card-body { padding: 0; background: transparent; box-shadow: none; }
+.relay-account { display: flex; align-items: center; gap: 0.8rem; margin-top: 1.5rem; font-weight: 700; }

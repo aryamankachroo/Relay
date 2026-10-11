@@ -4,21 +4,27 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "react-router dev",
+    "build": "react-router typegen && tsc -b && react-router build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "react-router-serve ./build/server/index.js",
+    "start": "react-router-serve ./build/server/index.js"
   },
   "dependencies": {
+    "@clerk/react-router": "^3.6.33",
+    "@react-router/node": "^7.18.4",
+    "@react-router/serve": "^7.18.4",
     "@tailwindcss/vite": "^4.3.3",
     "lucide-react": "^1.55.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^7.18.4",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "isbot": "^5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@react-router/dev": "^7.18.4",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
