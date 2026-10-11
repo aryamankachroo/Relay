@@ -1,0 +1,22 @@
+{
+  "name": "relay-imessage",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Text Relay over iMessage with Photon spectrum-ts (local Mac provider).",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env bridge.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@spectrum-ts/imessage-local": "^12.10.1",
+    "better-sqlite3": "^13.0.3",
+    "spectrum-ts": "^12.10.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "better-sqlite3@13.0.3": true,
+    "protobufjs@8.8.0": true,
+    "protobufjs@7.6.6": true
+  }
+}

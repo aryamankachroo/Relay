@@ -35,5 +35,8 @@ backend/.pytest_cache
 **/__pycache__/
 *.pyc
 
+# iMessage bridge
+imessage/.env
+
 # clerk configuration (can include secrets)
 /.clerk/
