@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -23,6 +24,7 @@ from app.models import (
 from app.scheduler import first_free_slot, overlaps, schedule_shared
 from app.extract import extract_message
 from app import snowflake_store
+from app.catalog import BOOKSHELF_TOOLS, is_bookshelf, match_catalog, mentioned_items
 
 BUFFER = timedelta(minutes=LOAN_BUFFER_MINUTES)
 ACTIVE_LOAN = ("requested", "confirmed", "picked_up")
@@ -39,6 +41,9 @@ class SlotRequest:
 
 def handle_chat(session: Session, resident_id: str, message: str) -> dict:
     resident = _resident(session, resident_id)
+    inventory_answer = answer_inventory_question(session, message, resident_id)
+    if inventory_answer is not None:
+        return inventory_answer
     catalog = _catalog(session)
     extraction = extract_message(message, catalog)
     if extraction.intent == "confirm_yes":
@@ -62,6 +67,54 @@ def handle_chat(session: Session, resident_id: str, message: str) -> dict:
     return {
         "type": "no_match",
         "message": "Say what you are building, what you need, or what you can give.",
+    }
+
+
+def answer_inventory_question(session: Session, message: str, resident_id: str | None = None) -> dict | None:
+    normalized = message.lower().strip()
+    if re.search(r"\b(i need|i want|i have|i can lend|i can give|giving away|building|making)\b", normalized):
+        return None
+    if not re.search(
+        r"\b(who has|who owns|who can lend|what (?:items|tools)|what(?:'s| is) available|"
+        r"what do we have|anyone have|do we have|is there any|are there any|list (?:the )?(?:items|tools))\b",
+        normalized,
+    ):
+        return None
+
+    inventory = inventory_view(session)
+    if inventory["snowflake"] != "ok":
+        return {
+            "type": "inventory_answer",
+            "snowflake": inventory["snowflake"],
+            "message": "I can't verify neighborhood inventory because Snowflake is unavailable.",
+            "items": [],
+        }
+
+    catalog = _catalog(session)
+    mentioned = {item.id for item in mentioned_items(message, catalog)}
+    rows = [
+        row
+        for row in inventory["items"]
+        if row["willing_to_lend"] and int(row["quantity"] or 0) > 0
+        and (resident_id is None or row["resident_id"] != resident_id)
+        and (not mentioned or row["catalog_item_id"] in mentioned)
+    ]
+    if rows:
+        listings = "; ".join(
+            f"{row['resident_name']}: {row['quantity']} {row['catalog_item']}"
+            for row in rows
+        )
+        message_text = f"Snowflake inventory lists {listings}. Availability depends on the dates you need."
+    elif mentioned:
+        item_names = ", ".join(item.name for item in catalog if item.id in mentioned)
+        message_text = f"Snowflake inventory has no lendable {item_names} listed right now."
+    else:
+        message_text = "Snowflake inventory has no lendable items listed right now."
+    return {
+        "type": "inventory_answer",
+        "snowflake": "ok",
+        "message": message_text,
+        "items": rows,
     }
 
 

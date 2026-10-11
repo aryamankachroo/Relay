@@ -27,7 +27,16 @@ npm run dev
 
 ## Snowflake
 
-Copy nothing into git. Put credentials only in `backend/.env` (gitignored):
+`backend/.env` is local and gitignored. The checked-out configuration contains the account, user, warehouse, database, schema, role and Gemini model; set `SNOWFLAKE_PASSWORD` there after rotating the password shared in chat. Do not put credentials in source control.
+
+Set up a new Snowflake account in this order:
+
+1. In Snowsight, run `snowflake/bootstrap.sql` using an account administrator role. It creates the application role, warehouse, database and schema, then grants the application role to `RAMLOLS2604`.
+2. Run `snowflake/setup.sql` to create and seed the `INVENTORY`, `REQUESTS` and `RESIDENTS` tables.
+3. Optionally run `snowflake/seed_requests.sql` to load the four demo requests.
+4. Put the rotated password in `backend/.env`, then start the API and check `GET /health` for `snowflake: "ok"`.
+
+The app role is not an administrator. The bootstrap script must be run with an account administrator role.
 
 - `SNOWFLAKE_ACCOUNT`
 - `SNOWFLAKE_USER`

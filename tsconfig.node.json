@@ -19,5 +19,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "react-router.config.ts", "bridge.ts"]
+  "include": ["vite.config.ts", "react-router.config.ts", "bridge.ts", "chat.ts", "parse.ts", "catalog.ts", "matcher.ts", "scheduler.ts", "status.ts", "store.ts", "seed.ts", "format.ts", "types.ts", "tests/**/*.ts", "scripts/demo-relay.ts"]
 }

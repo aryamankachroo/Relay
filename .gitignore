@@ -39,3 +39,6 @@ backend/.pytest_cache
 /.clerk/
 # Local server credentials
 .env
+
+# Relay bridge state (private conversations and delivery queue)
+.relay/

@@ -46,6 +46,8 @@ export function replyFromApi(card: ApiChatCard, text: string): ChatMessage {
       )
     case 'loan_status':
       return createTextMessage('relay', loanStatusText(card))
+    case 'inventory_answer':
+      return createTextMessage('relay', card.message)
     case 'no_match':
       return createTextMessage('relay', card.message)
   }

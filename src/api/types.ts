@@ -143,11 +143,19 @@ export type ApiNoMatchCard = {
   request_id?: string
 }
 
+export type ApiInventoryAnswer = {
+  type: 'inventory_answer'
+  snowflake: string
+  message: string
+  items: ApiInventoryItem[]
+}
+
 export type ApiChatCard =
   | ApiToolListCard
   | ApiConfirmationCard
   | ApiMatchCard
   | ApiLoanStatusCard
+  | ApiInventoryAnswer
   | ApiNoMatchCard
 
 export type ApiActivity = {

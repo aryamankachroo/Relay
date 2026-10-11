@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.db import get_session, init_db, session_scope
 from app.logic import (
     activity,
+    answer_inventory_question,
     add_tool,
     confirm_handoff,
     confirm_request,
@@ -53,6 +54,10 @@ class ResidentIn(BaseModel):
 
 class ChatIn(BaseModel):
     resident_id: str
+    message: str
+
+
+class AgentQuestionIn(BaseModel):
     message: str
 
 
@@ -194,6 +199,11 @@ def create_app() -> FastAPI:
     @app.post("/api/chat")
     def chat(body: ChatIn, session: Session = Depends(get_session)):
         return handle_chat(session, body.resident_id, body.message)
+
+    @app.post("/api/agent/answer")
+    def answer_agent_question(body: AgentQuestionIn, session: Session = Depends(get_session)):
+        answer = answer_inventory_question(session, body.message)
+        return answer or {"type": "not_inventory_question"}
 
     @app.post("/api/requests/{request_id}/confirm")
     def post_confirm_request(

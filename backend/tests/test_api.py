@@ -142,3 +142,68 @@ def test_my_stuff_and_neighborhood_are_empty_without_snowflake(client):
     block = client.get("/api/neighborhood").json()
     assert block["snowflake"] == "not_configured"
     assert block["items"] == []
+
+
+def test_inventory_question_answers_from_snowflake_rows(client, monkeypatch):
+    from app import snowflake_store
+
+    monkeypatch.setattr(
+        snowflake_store,
+        "fetch_inventory",
+        lambda: {
+            "snowflake": "ok",
+            "items": [
+                {
+                    "resident_id": "avery",
+                    "resident_name": "Avery Moss",
+                    "catalog_item": "Step ladder",
+                    "quantity": 1,
+                    "willing_to_lend": True,
+                },
+                {
+                    "resident_id": "jordan",
+                    "resident_name": "Jordan Lee",
+                    "catalog_item": "Step ladder",
+                    "quantity": 2,
+                    "willing_to_lend": True,
+                },
+            ],
+        },
+    )
+
+    response = _say(client, "avery", "Who has a ladder?")
+
+    assert response["type"] == "inventory_answer"
+    assert response["snowflake"] == "ok"
+    assert "Jordan Lee: 2 Step ladder" in response["message"]
+    assert "Avery Moss" not in response["message"]
+
+
+def test_inventory_question_fails_closed_when_snowflake_is_unavailable(client, monkeypatch):
+    from app import snowflake_store
+
+    monkeypatch.setattr(
+        snowflake_store,
+        "fetch_inventory",
+        lambda: {"snowflake": "not_configured", "items": []},
+    )
+
+    response = client.post(
+        "/api/agent/answer",
+        json={"message": "Who has a ladder?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == "inventory_answer"
+    assert response.json()["snowflake"] == "not_configured"
+    assert "Snowflake is unavailable" in response.json()["message"]
+
+
+def test_agent_answer_route_ignores_non_inventory_questions(client):
+    response = client.post(
+        "/api/agent/answer",
+        json={"message": "What tools do I need for a bookshelf?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"type": "not_inventory_question"}
