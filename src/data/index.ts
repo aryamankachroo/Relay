@@ -1,4 +1,4 @@
-// Static shell display for the demo resident.
+/** Fictional Willow Court resident used across Chat, My Inventory, and the shell. */
 export const demoResident = {
   name: 'Avery Moss',
   shortName: 'Avery',
@@ -6,4 +6,4 @@ export const demoResident = {
   initials: 'AM',
 }
 
-export const completedHandoffCount = 18
+export const demoCommunityLabel = 'Willow Court · fictional demo community'

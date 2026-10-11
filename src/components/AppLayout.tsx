@@ -1,12 +1,15 @@
 import { Bell, Flower2, Map, MessageCircle, Package, type LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
-import { completedHandoffCount, demoResident } from '../data/index.ts'
+import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { countCompletedReuse } from '../data/reuse.ts'
+import { useHandoffs } from '../state/handoffStore.ts'
+import { useLoanRequests } from '../state/loanStore.ts'
 import { Atmosphere } from './Atmosphere.tsx'
 import { RelayMark } from './RelayMark.tsx'
 
 const links: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: '/', label: 'Chat', icon: MessageCircle, end: true },
-  { to: '/my-stuff', label: 'My Stuff', icon: Package },
+  { to: '/my-stuff', label: 'My Inventory', icon: Package },
   { to: '/neighborhood', label: 'Neighborhood', icon: Map },
   { to: '/activity', label: 'Activity', icon: Bell },
   { to: '/garden', label: 'Garden', icon: Flower2 },
@@ -22,6 +25,7 @@ export function AppLayout() {
       <div className="app-frame">
         <aside className="sidebar shell-panel">
           <Wordmark />
+          <p className="sidebar-demo-label">{demoCommunityLabel}</p>
           <PrimaryNav layout="side" />
           <div className="sidebar-foot">
             <ReuseCounter />
@@ -35,6 +39,7 @@ export function AppLayout() {
               <ReuseCounter compact />
               <ResidentCard compact />
             </div>
+            <p className="mobile-demo-label">{demoCommunityLabel}</p>
           </header>
           <PrimaryNav layout="dock" />
           <main id="content" className="page-canvas">
@@ -94,10 +99,17 @@ function PrimaryNav({ layout }: { layout: 'side' | 'dock' }) {
 }
 
 function ReuseCounter({ compact = false }: { compact?: boolean }) {
+  const { requests: loans } = useLoanRequests()
+  const { handoffs } = useHandoffs()
+  const count = countCompletedReuse(loans, handoffs)
+
   return (
-    <div className={compact ? 'reuse-counter reuse-counter-compact' : 'reuse-counter'}>
-      <span className="reuse-count">{completedHandoffCount}</span>
-      <span className="reuse-copy">completed handoffs</span>
+    <div
+      className={compact ? 'reuse-counter reuse-counter-compact' : 'reuse-counter'}
+      aria-live="polite"
+    >
+      <span className="reuse-count">{count}</span>
+      <span className="reuse-copy">reuse events</span>
     </div>
   )
 }
