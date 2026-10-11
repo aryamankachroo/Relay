@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { demoResident } from '../data/index.ts'
+import { useAccountIdentity } from '../hooks/useAccountIdentity.ts'
 import {
   isReturnSelectable,
   nextLoanStatus,
@@ -69,8 +69,8 @@ function createSeededLoans(): LoanRequest[] {
       toolName: 'Hammer',
       itemName: 'Hammer',
       lenderId: residentLenderId,
-      lenderName: demoResident.name,
-      lenderInitials: demoResident.initials,
+      lenderName: 'Your account',
+      lenderInitials: '?',
       inventoryItemId: 'inv-hammer',
       borrowerId: 'neighbor-jordan',
       borrowerName: 'Jordan Hale',
@@ -87,8 +87,8 @@ function createSeededLoans(): LoanRequest[] {
       toolName: 'Extension cord',
       itemName: 'Extension cord',
       lenderId: residentLenderId,
-      lenderName: demoResident.name,
-      lenderInitials: demoResident.initials,
+      lenderName: 'Your account',
+      lenderInitials: '?',
       inventoryItemId: 'inv-extension-cord',
       borrowerId: 'neighbor-priya',
       borrowerName: 'Priya Shah',
@@ -103,6 +103,7 @@ function createSeededLoans(): LoanRequest[] {
 }
 
 export function LoanRequestsProvider({ children }: { children: ReactNode }) {
+  const account = useAccountIdentity()
   const [requests, setRequests] = useState<LoanRequest[]>(createSeededLoans)
 
   const requestLoan = useCallback((match: NeighborMatch, pickupId: string, returnId: string) => {
@@ -147,8 +148,14 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ requests, requestLoan, advanceLoan }),
-    [requests, requestLoan, advanceLoan],
+    () => ({
+      requests: requests.map((request) => request.lenderId === residentLenderId
+        ? { ...request, lenderName: account.name, lenderInitials: account.initials }
+        : request),
+      requestLoan,
+      advanceLoan,
+    }),
+    [requests, requestLoan, advanceLoan, account.name, account.initials],
   )
 
   return <LoanRequestsContext.Provider value={value}>{children}</LoanRequestsContext.Provider>

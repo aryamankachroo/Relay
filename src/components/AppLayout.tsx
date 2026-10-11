@@ -1,7 +1,8 @@
 import { Bell, Flower2, Map, MessageCircle, Package, type LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { UserButton } from '@clerk/react-router'
-import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { useAccountIdentity } from '../hooks/useAccountIdentity.ts'
+import { demoCommunityLabel } from '../data/index.ts'
 import { countCompletedReuse } from '../data/reuse.ts'
 import { useHandoffs } from '../state/handoffStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
@@ -116,19 +117,20 @@ function ReuseCounter({ compact = false }: { compact?: boolean }) {
 }
 
 function ResidentCard({ compact = false }: { compact?: boolean }) {
+  const account = useAccountIdentity()
   return (
     <div className={compact ? 'resident resident-compact' : 'resident'}>
       <UserButton />
       <span className="resident-copy">
         <span className="resident-name" aria-hidden={compact ? true : undefined}>
-          {compact ? demoResident.shortName : demoResident.name}
+          {compact ? account.shortName : account.name}
         </span>
         {compact ? (
           <span className="sr-only">
-            {demoResident.name}, {demoResident.street}
+            {account.name}
           </span>
         ) : (
-          <span className="resident-place">{demoResident.street}</span>
+          <span className="resident-place">Signed in</span>
         )}
       </span>
     </div>
