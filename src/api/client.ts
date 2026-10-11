@@ -11,7 +11,7 @@ import type {
 
 export const apiBase = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
-/** Every signed-in Clerk user acts as Avery until accounts map to residents. */
+/** Loan cards still treat the demo neighbor Avery as the local borrower. */
 export const residentId = 'avery'
 
 export class ApiError extends Error {
@@ -46,14 +46,17 @@ type LoanCard = { type: 'loan_status'; record: 'loan' } & ApiLoan
 type HandoffCard = { type: 'loan_status'; record: 'handoff' } & ApiHandoff
 
 export const api = {
-  chat: (message: string) => post<ApiChatCard>('/api/chat', { resident_id: residentId, message }),
-  confirmRequest: (requestId: string) =>
+  chat: (residentId: string, message: string) =>
+    post<ApiChatCard>('/api/chat', { resident_id: residentId, message }),
+  confirmRequest: (residentId: string, requestId: string) =>
     post<ApiChatCard>(`/api/requests/${requestId}/confirm`, { resident_id: residentId }),
   residents: () => request<ApiResident[]>('/api/residents'),
   saveProfile: (body: { clerk_user_id: string; name: string; email: string; initials: string; street: string }) =>
-    post<{ id: string; name: string }>('/api/me', body),
-  inventory: () => request<ApiInventory>(`/api/inventory?resident_id=${residentId}`),
-  neighborhood: () => request<ApiInventory>(`/api/neighborhood?resident_id=${residentId}`),
+    post<{ id: string; name: string; resident_id: string }>('/api/me', body),
+  inventory: (residentId: string) =>
+    request<ApiInventory>(`/api/inventory?resident_id=${encodeURIComponent(residentId)}`),
+  neighborhood: (residentId: string) =>
+    request<ApiInventory>(`/api/neighborhood?resident_id=${encodeURIComponent(residentId)}`),
   catalog: () => request<ApiCatalogItem[]>('/api/catalog'),
   activity: () => request<ApiActivity>('/api/activity'),
   garden: () => request<{ count: number }>('/api/garden'),
@@ -71,13 +74,16 @@ export const api = {
   removeTool: (projectId: string, toolId: string) =>
     request<ApiProject>(`/api/projects/${projectId}/tools/${toolId}`, { method: 'DELETE' }),
 
-  createLoan: (body: {
-    lender_id: string
-    catalog_item_id: string
-    window_start: string
-    window_end: string
-    inventory_id?: string
-  }) => post<LoanCard>('/api/loans', { borrower_id: residentId, quantity: 1, ...body }),
+  createLoan: (
+    residentId: string,
+    body: {
+      lender_id: string
+      catalog_item_id: string
+      window_start: string
+      window_end: string
+      inventory_id?: string
+    },
+  ) => post<LoanCard>('/api/loans', { borrower_id: residentId, quantity: 1, ...body }),
   respondLoan: (loanId: string, action: 'accept' | 'decline') =>
     post<LoanCard>(`/api/loans/${loanId}/respond`, { action }),
   pickupLoan: (loanId: string) => post<LoanCard>(`/api/loans/${loanId}/pickup`),

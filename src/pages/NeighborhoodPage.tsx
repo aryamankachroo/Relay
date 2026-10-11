@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { Map as MapIcon, X } from 'lucide-react'
-import { api, residentId } from '../api/client.ts'
+import { api } from '../api/client.ts'
 import type { ApiInventoryItem, ApiResident } from '../api/types.ts'
 import { GlassCard } from '../components/GlassCard.tsx'
 import { NeighborhoodScene } from '../components/NeighborhoodScene.tsx'
@@ -8,6 +8,7 @@ import { shareLinksFromLoans, type SceneResident } from '../data/neighborhood.ts
 import { useCurrentResident } from '../state/currentResident.ts'
 import { useInventory } from '../state/inventoryStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
+import { useShelfResident } from '../state/shelfResident.tsx'
 
 const houseSpots = [
   { x: 400, y: 300, roof: '#2ecfbf', wall: '#f4fcff' },
@@ -26,14 +27,17 @@ export function NeighborhoodPage() {
   const { items } = useInventory()
   const { requests: loans } = useLoanRequests()
   const you = useCurrentResident()
+  const shelfId = useShelfResident()
   const [people, setPeople] = useState<ApiResident[]>([])
   const [shared, setShared] = useState<ApiInventoryItem[]>([])
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!shelfId) return
+    const viewerId = shelfId
     let cancel = false
-    Promise.all([api.residents(), api.neighborhood()])
+    Promise.all([api.residents(), api.neighborhood(viewerId)])
       .then(([directory, block]) => {
         if (cancel) return
         setPeople(directory)
@@ -53,15 +57,18 @@ export function NeighborhoodPage() {
     return () => {
       cancel = true
     }
-  }, [])
+  }, [shelfId])
 
-  const residents = useMemo(() => snowflakeHomes(people, shared, you), [people, shared, you])
+  const residents = useMemo(
+    () => snowflakeHomes(people, shared, { id: shelfId, name: you.name, initials: you.initials }),
+    [people, shared, shelfId, you.name, you.initials],
+  )
   const residentIds = useMemo(() => new Set(residents.map((resident) => resident.id)), [residents])
   const links = useMemo(() => shareLinksFromLoans(loans, residentIds), [loans, residentIds])
   const selected = selectedId ? residents.find((resident) => resident.id === selectedId) : null
   const selectedItems = useMemo(() => {
     if (!selectedId) return []
-    if (selectedId === residentId) {
+    if (selectedId === shelfId) {
       return items
         .filter((item) => item.availableToLend)
         .map((item) => ({ id: item.id, name: item.name, detail: item.notes || item.condition }))
@@ -73,7 +80,7 @@ export function NeighborhoodPage() {
         name: item.catalog_name || item.catalog_item,
         detail: item.condition_note || '',
       }))
-  }, [selectedId, items, shared])
+  }, [selectedId, items, shared, shelfId])
 
   const activeLinks = links.filter((link) => link.active)
   const pendingLinks = links.filter((link) => !link.active)
@@ -185,16 +192,16 @@ export function NeighborhoodPage() {
 function snowflakeHomes(
   people: readonly ApiResident[],
   shared: readonly ApiInventoryItem[],
-  you: { name: string; initials: string },
+  you: { id: string; name: string; initials: string },
 ): SceneResident[] {
   const byId = new Map(people.map((person) => [person.id, person]))
-  const neighborIds = [...new Set(shared.map((item) => item.resident_id))].filter((id) => id !== residentId)
-  const ordered = [residentId, ...neighborIds].slice(0, houseSpots.length)
+  const neighborIds = [...new Set(shared.map((item) => item.resident_id))].filter((id) => id !== you.id)
+  const ordered = [you.id, ...neighborIds].slice(0, houseSpots.length)
 
   return ordered.map((id, index) => {
     const person = byId.get(id)
     const listed = shared.find((item) => item.resident_id === id)
-    const yours = id === residentId
+    const yours = id === you.id
     const name = yours ? you.name : person?.name || listed?.resident_name || id
     const spot = houseSpots[index]
     return {

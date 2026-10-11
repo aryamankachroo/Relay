@@ -8,7 +8,7 @@ import {
 } from '../data/bookshelfProject.ts'
 import { InventoryContext } from './inventoryStore.ts'
 
-export function InventoryProvider({ children }: { children: ReactNode }) {
+export function InventoryProvider({ residentId, children }: { residentId: string; children: ReactNode }) {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [message, setMessage] = useState('')
@@ -16,7 +16,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancel = false
     api
-      .inventory()
+      .inventory(residentId)
       .then((body) => {
         if (cancel) return
         if (body.snowflake !== 'ok') {
@@ -38,7 +38,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return () => {
       cancel = true
     }
-  }, [])
+  }, [residentId])
 
   const addItem = useCallback((draft: InventoryDraft) => {
     const next = sanitizeDraft(draft)

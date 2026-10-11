@@ -132,43 +132,88 @@ CREATE TABLE IF NOT EXISTS RESIDENTS (
     EMAIL         VARCHAR,
     INITIALS      VARCHAR,
     STREET        VARCHAR,
+    ASSIGNED_RESIDENT_ID VARCHAR,
     UPDATED_AT    TIMESTAMP_TZ
 )
 """
 
-MERGE_RESIDENT_SQL = """
-MERGE INTO RESIDENTS AS t
-USING (
-    SELECT %s AS CLERK_USER_ID, %s AS NAME, %s AS EMAIL, %s AS INITIALS, %s AS STREET
-) AS s
-ON t.CLERK_USER_ID = s.CLERK_USER_ID
-WHEN MATCHED THEN UPDATE SET
-    NAME = s.NAME,
-    EMAIL = s.EMAIL,
-    INITIALS = s.INITIALS,
-    STREET = s.STREET,
-    UPDATED_AT = CURRENT_TIMESTAMP()
-WHEN NOT MATCHED THEN INSERT (CLERK_USER_ID, NAME, EMAIL, INITIALS, STREET, UPDATED_AT)
-VALUES (s.CLERK_USER_ID, s.NAME, s.EMAIL, s.INITIALS, s.STREET, CURRENT_TIMESTAMP())
-"""
+RESIDENTS_COLUMN_DDL = "ALTER TABLE RESIDENTS ADD COLUMN IF NOT EXISTS ASSIGNED_RESIDENT_ID VARCHAR"
 
 
-def upsert_profile(clerk_user_id: str, name: str, email: str, initials: str, street: str) -> None:
+def upsert_profile(clerk_user_id: str, name: str, email: str, initials: str, street: str) -> str:
+    """Save the Clerk profile and return the existing neighbor this login keeps."""
     if not configured():
         raise SnowflakeError("Snowflake is not configured")
     try:
         with _connect() as conn:
             cursor = conn.cursor()
-            try:
-                cursor.execute(RESIDENTS_DDL)
-            except Exception as exc:
-                message = str(exc)
-                if "Insufficient privileges" not in message and "already exists" not in message.lower():
-                    raise
-            cursor.execute(MERGE_RESIDENT_SQL, (clerk_user_id, name, email, initials, street))
+            _ensure_residents(cursor)
+            cursor.execute(
+                "SELECT ASSIGNED_RESIDENT_ID FROM RESIDENTS WHERE CLERK_USER_ID = %s",
+                (clerk_user_id,),
+            )
+            existing = cursor.fetchone()
+            assigned = existing[0] if existing and existing[0] else _next_open_resident(cursor)
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE RESIDENTS
+                    SET NAME = %s, EMAIL = %s, INITIALS = %s, STREET = %s,
+                        ASSIGNED_RESIDENT_ID = %s, UPDATED_AT = CURRENT_TIMESTAMP()
+                    WHERE CLERK_USER_ID = %s
+                    """,
+                    (name, email, initials, street, assigned, clerk_user_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO RESIDENTS (
+                        CLERK_USER_ID, NAME, EMAIL, INITIALS, STREET, ASSIGNED_RESIDENT_ID, UPDATED_AT
+                    ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP())
+                    """,
+                    (clerk_user_id, name, email, initials, street, assigned),
+                )
             conn.commit()
+            return assigned
     except Exception as exc:
         raise SnowflakeError(str(exc)) from exc
+
+
+def _ensure_residents(cursor) -> None:
+    try:
+        cursor.execute(RESIDENTS_DDL)
+    except Exception as exc:
+        message = str(exc)
+        if "Insufficient privileges" not in message and "already exists" not in message.lower():
+            raise
+    try:
+        cursor.execute(RESIDENTS_COLUMN_DDL)
+    except Exception as exc:
+        message = str(exc)
+        if "Insufficient privileges" not in message and "already exists" not in message.lower():
+            raise
+
+
+def _next_open_resident(cursor) -> str:
+    cursor.execute(
+        "SELECT DISTINCT RESIDENT_ID FROM INVENTORY WHERE RESIDENT_ID IS NOT NULL ORDER BY RESIDENT_ID"
+    )
+    pool = [row[0] for row in cursor.fetchall() if row[0]]
+    cursor.execute(
+        "SELECT ASSIGNED_RESIDENT_ID FROM RESIDENTS WHERE ASSIGNED_RESIDENT_ID IS NOT NULL"
+    )
+    assigned = [row[0] for row in cursor.fetchall() if row[0]]
+    taken = set(assigned)
+    for candidate in pool:
+        if candidate not in taken:
+            return candidate
+    if not pool:
+        return "avery"
+    counts = {candidate: 0 for candidate in pool}
+    for owner in assigned:
+        if owner in counts:
+            counts[owner] += 1
+    return min(pool, key=lambda candidate: (counts[candidate], candidate))
 
 
 def update_request(request_id: str, status: str, quantity: int) -> None:

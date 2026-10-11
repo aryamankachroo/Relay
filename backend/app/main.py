@@ -136,7 +136,9 @@ def create_app() -> FastAPI:
     @app.post("/api/me")
     def save_me(body: ProfileIn, session: Session = Depends(get_session)):
         try:
-            upsert_profile(body.clerk_user_id, body.name, body.email, body.initials, body.street)
+            assigned_id = upsert_profile(
+                body.clerk_user_id, body.name, body.email, body.initials, body.street
+            )
         except SnowflakeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         short_name = body.name.split()[0] if body.name.split() else body.initials
@@ -158,7 +160,7 @@ def create_app() -> FastAPI:
             resident.initials = body.initials
         session.add(resident)
         session.commit()
-        return {"id": resident.id, "name": resident.name}
+        return {"id": resident.id, "name": resident.name, "resident_id": assigned_id}
 
     @app.post("/api/residents", status_code=201)
     def create_resident(body: ResidentIn, session: Session = Depends(get_session)):

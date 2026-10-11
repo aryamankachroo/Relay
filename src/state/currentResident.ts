@@ -17,7 +17,10 @@ export function useCurrentResident(): CurrentResident {
   const { isLoaded, user } = useUser()
 
   return useMemo(() => {
-    if (!isLoaded || !user) return { ...demoResident, id: null, email: '' }
+    if (!isLoaded) {
+      return { id: null, name: '', shortName: '', initials: '', street: demoResident.street, email: '' }
+    }
+    if (!user) return { ...demoResident, id: null, email: '' }
 
     const email = user.primaryEmailAddress?.emailAddress
     const name =

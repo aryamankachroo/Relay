@@ -1,8 +1,6 @@
-import { useEffect, useRef } from 'react'
 import { Bell, Flower2, Map, MessageCircle, Package, type LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { UserButton } from '@clerk/react-router'
-import { api } from '../api/client.ts'
 import { demoCommunityLabel } from '../data/index.ts'
 import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useCurrentResident } from '../state/currentResident.ts'
@@ -18,7 +16,6 @@ const links: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = 
 ]
 
 export function AppLayout() {
-  useProfileSync()
   return (
     <div className="app-shell">
       <a className="skip-link" href="#content">
@@ -114,25 +111,6 @@ function ReuseCounter({ compact = false }: { compact?: boolean }) {
       <span className="reuse-copy">reuse events</span>
     </div>
   )
-}
-
-function useProfileSync() {
-  const resident = useCurrentResident()
-  const saved = useRef('')
-
-  useEffect(() => {
-    if (!resident.id) return
-    const key = `${resident.id}:${resident.name}:${resident.email}`
-    if (saved.current === key) return
-    saved.current = key
-    void api.saveProfile({
-      clerk_user_id: resident.id,
-      name: resident.name,
-      email: resident.email,
-      initials: resident.initials,
-      street: resident.street,
-    })
-  }, [resident.id, resident.name, resident.email, resident.initials, resident.street])
 }
 
 function ResidentCard({ compact = false }: { compact?: boolean }) {

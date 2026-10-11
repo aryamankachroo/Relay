@@ -14,6 +14,7 @@ import { ToolChecklistCard } from '../components/ToolChecklistCard.tsx'
 import { demoCommunityLabel } from '../data/index.ts'
 import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useCurrentResident } from '../state/currentResident.ts'
+import { useShelfResident } from '../state/shelfResident.tsx'
 
 const examples: { kicker: string; text: string; icon: LucideIcon; accent: string }[] = [
   {
@@ -41,6 +42,7 @@ const inputMaxHeight = 136
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
+  const shelfId = useShelfResident()
   const { refresh } = useActivityFeed()
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -73,7 +75,7 @@ export function ChatPage() {
 
     let reply: ChatMessage
     try {
-      reply = replyFromApi(await api.chat(trimmed), trimmed)
+      reply = replyFromApi(await api.chat(shelfId, trimmed), trimmed)
     } catch {
       reply = createTextMessage(
         'relay',

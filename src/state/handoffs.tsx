@@ -3,19 +3,21 @@ import { exchangeRequestsFromApi, handoffsFromApi } from '../api/adapt.ts'
 import { api } from '../api/client.ts'
 import type { ExchangeDraft } from '../data/exchanges.ts'
 import { useActivityFeed } from './activityFeedStore.ts'
+import { useShelfResident } from './shelfResident.tsx'
 import { HandoffContext } from './handoffStore.ts'
 
 /** Hand Off needs, offers, and handoffs, read from the API activity poll. */
 export function HandoffsProvider({ children }: { children: ReactNode }) {
   const { activity, directory, refresh } = useActivityFeed()
+  const shelfId = useShelfResident()
 
   const requests = useMemo(
-    () => (activity && directory ? exchangeRequestsFromApi(activity, directory) : []),
-    [activity, directory],
+    () => (activity && directory ? exchangeRequestsFromApi(activity, directory, shelfId) : []),
+    [activity, directory, shelfId],
   )
   const handoffs = useMemo(
-    () => (activity && directory ? handoffsFromApi(activity, directory) : []),
-    [activity, directory],
+    () => (activity && directory ? handoffsFromApi(activity, directory, shelfId) : []),
+    [activity, directory, shelfId],
   )
 
   const confirmExchange = useCallback(
@@ -23,7 +25,7 @@ export function HandoffsProvider({ children }: { children: ReactNode }) {
       try {
         let requestId = pendingRequestId
         if (!requestId) {
-          const drafted = await api.chat(sentenceFor(draft))
+          const drafted = await api.chat(shelfId, sentenceFor(draft))
           if (drafted.type !== 'confirmation') {
             return {
               requestId: null,
@@ -32,7 +34,7 @@ export function HandoffsProvider({ children }: { children: ReactNode }) {
           }
           requestId = drafted.request_id
         }
-        const result = await api.confirmRequest(requestId)
+        const result = await api.confirmRequest(shelfId, requestId)
         await refresh()
         return { requestId, message: result.type === 'no_match' ? result.message : null }
       } catch (caught) {
@@ -42,7 +44,7 @@ export function HandoffsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [refresh],
+    [refresh, shelfId],
   )
 
   const advanceHandoff = useCallback(

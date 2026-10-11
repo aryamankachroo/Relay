@@ -134,11 +134,11 @@ const loanStatuses: Record<ApiLoan['status'], LoanStatus | null> = {
   declined: null,
 }
 
-export function loanFromApi(loan: ApiLoan, directory: Directory): LoanRequest | null {
+export function loanFromApi(loan: ApiLoan, directory: Directory, viewerId = residentId): LoanRequest | null {
   const status = loanStatuses[loan.status]
   if (!status) return null
   const name = directory.catalog.get(loan.catalog_item_id)?.name ?? loan.catalog_item_id
-  const averyLends = loan.lender_id === residentId
+  const averyLends = loan.lender_id === viewerId
   const lender = directory.residents.get(loan.lender_id)
   const borrower = directory.residents.get(loan.borrower_id)
   const start = parseTime(loan.window.start)
@@ -178,10 +178,14 @@ const handoffStatuses: Record<ApiHandoff['status'], HandoffStatus | null> = {
 const hiddenRequestStatuses = new Set(['pending_confirm', 'declined'])
 
 /** Avery's published needs and offers, with how much of each is already arranged. */
-export function exchangeRequestsFromApi(activity: ApiActivity, directory: Directory): ExchangeRequest[] {
+export function exchangeRequestsFromApi(
+  activity: ApiActivity,
+  directory: Directory,
+  viewerId = residentId,
+): ExchangeRequest[] {
   const live = activity.handoffs.filter((handoff) => handoff.status !== 'declined')
   return activity.requests.flatMap((request) => {
-    if (request.resident_id !== residentId) return []
+    if (request.resident_id !== viewerId) return []
     if (request.kind !== 'need' && request.kind !== 'offer') return []
     if (hiddenRequestStatuses.has(request.status)) return []
     const arranged =
@@ -213,7 +217,11 @@ export function exchangeRequestsFromApi(activity: ApiActivity, directory: Direct
 }
 
 /** Handoffs Avery is part of, as recipient (a need) or donor (an offer). */
-export function handoffsFromApi(activity: ApiActivity, directory: Directory): HandoffRecord[] {
+export function handoffsFromApi(
+  activity: ApiActivity,
+  directory: Directory,
+  viewerId = residentId,
+): HandoffRecord[] {
   const requests = new Map(activity.requests.map((row) => [row.id, row]))
   return activity.handoffs.flatMap((handoff): HandoffRecord[] => {
     const status = handoffStatuses[handoff.status]
@@ -222,9 +230,17 @@ export function handoffsFromApi(activity: ApiActivity, directory: Directory): Ha
     const item = catalogName(directory, need?.catalog_item_id ?? '')
     const recipient = directory.residents.get(handoff.recipient_id)
 
-    if (handoff.recipient_id === residentId) {
+    if (handoff.recipient_id === viewerId) {
       const parts = handoff.allocations.map((row) =>
-        handoffPart(row.offer_request_id, row.resident_id, row.quantity, requests.get(row.offer_request_id), need, directory),
+        handoffPart(
+          row.offer_request_id,
+          row.resident_id,
+          row.quantity,
+          requests.get(row.offer_request_id),
+          need,
+          directory,
+          viewerId,
+        ),
       )
       const quantity = parts.reduce((sum, part) => sum + part.quantity, 0)
       return [
@@ -242,7 +258,7 @@ export function handoffsFromApi(activity: ApiActivity, directory: Directory): Ha
       ]
     }
 
-    const mine = handoff.allocations.find((row) => row.resident_id === residentId)
+    const mine = handoff.allocations.find((row) => row.resident_id === viewerId)
     if (!mine) return []
     return [
       {
@@ -254,7 +270,7 @@ export function handoffsFromApi(activity: ApiActivity, directory: Directory): Ha
         pickupArea: need?.area || recipient?.street || demoResident.street,
         windowLabel: formatWindow(need?.window),
         parts: [
-          handoffPart(handoff.need_request_id, handoff.recipient_id, mine.quantity, need, need, directory),
+          handoffPart(handoff.need_request_id, handoff.recipient_id, mine.quantity, need, need, directory, viewerId),
         ],
         status,
       },
@@ -286,9 +302,10 @@ function handoffPart(
   post: ApiRequest | undefined,
   need: ApiRequest | undefined,
   directory: Directory,
+  viewerId = residentId,
 ): HandoffPart {
   const neighbor = directory.residents.get(neighborId)
-  const avery = directory.residents.get(residentId)
+  const avery = directory.residents.get(viewerId)
   const distance =
     neighbor && avery ? Math.abs(neighbor.x - avery.x) + Math.abs(neighbor.y - avery.y) : 0
   return {

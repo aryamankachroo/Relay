@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { formatSlotIso, loanFromApi } from '../api/adapt.ts'
-import { ApiError, api, residentId } from '../api/client.ts'
+import { ApiError, api } from '../api/client.ts'
 import type { ApiConflict } from '../api/types.ts'
 import {
   isReturnSelectable,
@@ -11,23 +11,25 @@ import {
 import { useActivityFeed } from './activityFeedStore.ts'
 import { useCurrentResident } from './currentResident.ts'
 import { LoanRequestsContext } from './loanStore.ts'
+import { useShelfResident } from './shelfResident.tsx'
 
 /** Borrow Tomorrow loans Avery is part of, read from the API activity poll. */
 export function LoanRequestsProvider({ children }: { children: ReactNode }) {
   const { activity, directory, refresh } = useActivityFeed()
   const you = useCurrentResident()
+  const shelfId = useShelfResident()
 
   const requests = useMemo<LoanRequest[]>(() => {
     if (!activity || !directory) return []
     return activity.loans.flatMap((loan) => {
-      if (loan.lender_id !== residentId && loan.borrower_id !== residentId) return []
-      const request = loanFromApi(loan, directory)
+      if (loan.lender_id !== shelfId && loan.borrower_id !== shelfId) return []
+      const request = loanFromApi(loan, directory, shelfId)
       if (!request) return []
       return request.lenderId === residentLenderId
         ? [{ ...request, lenderName: you.name, lenderInitials: you.initials }]
         : [request]
     })
-  }, [activity, directory, you])
+  }, [activity, directory, shelfId, you])
 
   const requestLoan = useCallback(
     async (match: NeighborMatch, pickupId: string, returnId: string) => {
@@ -37,7 +39,7 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
       if (!pickup.start || !due.end || !match.catalogItemId) return 'This listing has no bookable time.'
 
       try {
-        await api.createLoan({
+        await api.createLoan(shelfId, {
           lender_id: match.resident.id,
           catalog_item_id: match.catalogItemId,
           window_start: pickup.start,
@@ -50,7 +52,7 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
       await refresh()
       return null
     },
-    [refresh],
+    [refresh, shelfId],
   )
 
   const advanceLoan = useCallback(
