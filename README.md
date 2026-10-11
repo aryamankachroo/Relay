@@ -94,5 +94,6 @@ node --env-file=.env.local node_modules/@react-router/serve/bin.js ./build/serve
 ```
 
 In deployment, provide both Clerk keys through the server environment and run
-`npm start`. Successful sign-in currently displays the account controls;
-neighborhood features remain a frontend demo.
+`npm start`. Successful sign-in opens the neighborhood app, with account
+controls in the sidebar and mobile header. Signed-out visitors see the animated
+login flow. Neighborhood features remain a frontend demo.

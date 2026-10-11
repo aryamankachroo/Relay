@@ -7,10 +7,15 @@ export default function App({ children }: { children: ReactNode }) {
   const finishIntro = useCallback(() => setIntroComplete(true), [])
 
   return (
-    <div className="app-shell">
-      <div className="atmosphere" aria-hidden="true"><NeighborhoodScene /></div>
-      {introComplete ? children : <RelayIntro onDone={finishIntro} />}
-    </div>
+    <>
+      <Show when="signed-in">{children}</Show>
+      <Show when="signed-out">
+        <div className="app-shell">
+          <div className="atmosphere" aria-hidden="true"><NeighborhoodScene /></div>
+          {introComplete ? children : <RelayIntro onDone={finishIntro} />}
+        </div>
+      </Show>
+    </>
   )
 }
 
