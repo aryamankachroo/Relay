@@ -1,4 +1,4 @@
-import { Bell, Flower2, Map, MessageCircle, Package, type LucideIcon } from 'lucide-react'
+import { Bell, Map, MessageCircle, Package, type LucideIcon } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { UserButton } from '@clerk/react-router'
 import { demoCommunityLabel } from '../data/index.ts'
@@ -18,7 +18,6 @@ const links: {
   { to: '/my-stuff', label: 'My Inventory', icon: Package, sphere: 'mint' },
   { to: '/neighborhood', label: 'Neighborhood', icon: Map, sphere: 'turquoise' },
   { to: '/activity', label: 'Activity', icon: Bell, sphere: 'aqua' },
-  { to: '/garden', label: 'Garden', icon: Flower2, sphere: 'leaf' },
 ]
 
 export function AppLayout() {

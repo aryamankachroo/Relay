@@ -3597,35 +3597,24 @@
 
   /* Neighborhood */
 
-  .hood-page,
-  .garden-page {
+  .hood-page {
     display: grid;
     gap: 1rem;
-  }
-
-  .hood-page {
     width: min(100%, 68rem);
   }
 
-  .garden-page {
-    width: min(100%, 56rem);
-  }
-
-  .hood-hero,
-  .garden-hero {
+  .hood-hero {
     display: grid;
     gap: 0.7rem;
   }
 
-  .hood-hero-badge,
-  .garden-hero-badge {
+  .hood-hero-badge {
     display: flex;
     align-items: center;
     gap: 0.9rem;
   }
 
-  .hood-title,
-  .garden-title {
+  .hood-title {
     margin: 0;
     font-size: clamp(1.7rem, 4vw, 2.05rem);
     font-weight: 800;
@@ -3633,8 +3622,7 @@
     line-height: 1.05;
   }
 
-  .hood-lead,
-  .garden-lead {
+  .hood-lead {
     margin: 0;
     max-width: 42rem;
     color: var(--relay-color-ink-soft);
@@ -3664,44 +3652,11 @@
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--relay-color-white) 85%, transparent);
   }
 
-  .hood-stage,
-  .garden-stage {
+  .hood-stage {
     position: relative;
     display: grid;
     gap: 0.85rem;
     padding: 0.65rem;
-  }
-
-  .garden-scene {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: calc(var(--relay-radius-lg) - 0.15rem);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--relay-color-white) 70%, transparent),
-      0 10px 24px color-mix(in srgb, var(--relay-color-sky-700) 14%, transparent);
-  }
-
-  .garden-sun-ring {
-    fill: color-mix(in srgb, #ffe8a3 35%, transparent);
-  }
-
-  .garden-sun {
-    fill: #ffe8a3;
-  }
-
-  .garden-bubble {
-    animation: bubble-float 7s ease-in-out infinite alternate;
-  }
-
-  .garden-bubble-b {
-    animation-duration: 6s;
-    animation-delay: -2s;
-  }
-
-  .garden-bubble-c {
-    animation-duration: 8s;
-    animation-delay: -1s;
   }
 
   .hood-filters {
@@ -4259,74 +4214,6 @@
       0 0 0 2px color-mix(in srgb, var(--relay-color-turquoise-300) 80%, transparent);
   }
 
-  /* Garden */
-
-  .garden-counter-card {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.85rem;
-  }
-
-  .garden-counter {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    min-width: 0;
-  }
-
-  .garden-counter-value {
-    display: grid;
-    min-width: 3.4rem;
-    height: 3.4rem;
-    place-items: center;
-    border-radius: var(--relay-radius-pill);
-    background-image: var(--relay-gradient-gloss), var(--relay-gradient-leaf);
-    color: white;
-    font-size: 1.45rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--relay-color-white) 75%, transparent),
-      var(--relay-shadow-soft);
-  }
-
-  .garden-counter-label {
-    margin: 0;
-    font-size: 1.05rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-  }
-
-  .garden-stage-chip {
-    margin: 0;
-    border: 1px solid color-mix(in srgb, var(--relay-color-leaf-500) 40%, white);
-    border-radius: var(--relay-radius-pill);
-    background: color-mix(in srgb, var(--relay-color-mint-300) 55%, white);
-    padding: 0.35rem 0.8rem;
-    color: var(--relay-color-leaf-700);
-    font-size: 0.82rem;
-    font-weight: 800;
-  }
-
-  .garden-caption {
-    margin: 0;
-    padding: 0 0.2rem 0.15rem;
-  }
-
-  .garden-sprout,
-  .garden-plant,
-  .garden-flower {
-    transform-box: fill-box;
-    transform-origin: center bottom;
-    animation: garden-rise 700ms ease both;
-  }
-
-  .garden-butterfly {
-    animation: hood-drift 10s ease-in-out infinite alternate;
-  }
-
   @media (min-width: 40rem) {
     .hood-stage {
       padding: 0.85rem;
@@ -4416,28 +4303,6 @@
   }
 }
 
-@keyframes hood-drift {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(10px);
-  }
-}
-
-@keyframes garden-rise {
-  from {
-    opacity: 0;
-    transform: scaleY(0.72) translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scaleY(1) translateY(0);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   body {
     background-attachment: scroll;
@@ -4475,12 +4340,7 @@
   }
 
   .loan-state-celebrate,
-  .activity-success,
-  .garden-bubble,
-  .garden-sprout,
-  .garden-plant,
-  .garden-flower,
-  .garden-butterfly {
+  .activity-success {
     animation: none;
   }
 }
