@@ -5,7 +5,6 @@ import type { ApiActivity } from '../api/types.ts'
 export type ActivityFeed = {
   activity: ApiActivity | null
   directory: Directory | null
-  gardenCount: number | null
   /** Set when the last poll could not reach the API. */
   error: string | null
   refresh: () => Promise<void>

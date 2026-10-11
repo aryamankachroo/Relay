@@ -80,7 +80,7 @@ export function ActivityPage() {
         </div>
         <p className="activity-lead">
           Borrow Tomorrow loans and Hand Off exchanges in one place. Advance each step here or in
-          Chat — returning a loan or marking a handoff received also adds to the reuse counter.
+          Chat.
         </p>
         <p className="hint">
           {activeCount} active · {completedCount} completed

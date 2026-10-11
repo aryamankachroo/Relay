@@ -3,7 +3,6 @@ import { Link, NavLink, Outlet } from 'react-router'
 import { UserButton } from '@clerk/react-router'
 import { demoCommunityLabel } from '../data/index.ts'
 import { sphereClass, type SectionSphere } from '../data/sectionSpheres.ts'
-import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useCurrentResident } from '../state/currentResident.ts'
 import { Atmosphere } from './Atmosphere.tsx'
 
@@ -34,7 +33,6 @@ export function AppLayout() {
           <p className="sidebar-demo-label">{demoCommunityLabel}</p>
           <PrimaryNav layout="side" />
           <div className="sidebar-foot">
-            <ReuseCounter />
             <ResidentCard />
           </div>
         </aside>
@@ -43,7 +41,6 @@ export function AppLayout() {
             <ShellAero idPrefix="mobile-chrome" />
             <div className="mobile-bar">
               <Wordmark compact />
-              <ReuseCounter compact />
               <ResidentCard compact />
             </div>
             <p className="mobile-demo-label">{demoCommunityLabel}</p>
@@ -153,21 +150,6 @@ function PrimaryNav({ layout }: { layout: 'side' | 'dock' }) {
         </NavLink>
       ))}
     </nav>
-  )
-}
-
-function ReuseCounter({ compact = false }: { compact?: boolean }) {
-  const { gardenCount } = useActivityFeed()
-  const count = gardenCount ?? 0
-
-  return (
-    <div
-      className={compact ? 'reuse-counter reuse-counter-compact' : 'reuse-counter'}
-      aria-live="polite"
-    >
-      <span className="reuse-count">{count}</span>
-      <span className="reuse-copy">reuse events</span>
-    </div>
   )
 }
 
