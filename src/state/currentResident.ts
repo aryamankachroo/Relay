@@ -3,10 +3,12 @@ import { useMemo } from 'react'
 import { demoResident } from '../data/index.ts'
 
 export type CurrentResident = {
+  id: string | null
   name: string
   shortName: string
   initials: string
   street: string
+  email: string
   imageUrl?: string
 }
 
@@ -15,7 +17,7 @@ export function useCurrentResident(): CurrentResident {
   const { isLoaded, user } = useUser()
 
   return useMemo(() => {
-    if (!isLoaded || !user) return demoResident
+    if (!isLoaded || !user) return { ...demoResident, id: null, email: '' }
 
     const email = user.primaryEmailAddress?.emailAddress
     const name =
@@ -27,10 +29,12 @@ export function useCurrentResident(): CurrentResident {
         : (words[0]?.slice(0, 2) ?? demoResident.initials)
 
     return {
+      id: user.id,
       name,
       shortName: user.firstName?.trim() || words[0] || name,
       initials: initials.toUpperCase(),
       street: demoResident.street,
+      email: email ?? '',
       imageUrl: user.hasImage ? user.imageUrl : undefined,
     }
   }, [isLoaded, user])

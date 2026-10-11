@@ -63,7 +63,7 @@ export function MyStuffPage() {
   const searchId = useId()
   const categoryId = useId()
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const { items, addItem, updateItem, removeItem, setAvailableToLend } = useInventory()
+  const { items, status, message, addItem, updateItem, removeItem, setAvailableToLend } = useInventory()
   const { requests: loans, advanceLoan } = useLoanRequests()
 
   const [query, setQuery] = useState('')
@@ -166,7 +166,9 @@ export function MyStuffPage() {
           </div>
           <p className="shelf-lead">{demoResident.street}</p>
           <p className="hint">
-            {items.length} {items.length === 1 ? 'item' : 'items'} · {lendableCount} open to lend
+            {status === 'loading'
+              ? 'Loading your shelf from Snowflake…'
+              : `${items.length} ${items.length === 1 ? 'item' : 'items'} · ${lendableCount} open to lend`}
           </p>
         </div>
         <button type="button" className="tool-primary shelf-add-trigger" onClick={openAdd}>
@@ -226,15 +228,19 @@ export function MyStuffPage() {
         </GlassCard>
       ) : null}
 
-      {emptyShelf ? (
+      {status === 'error' ? (
+        <GlassCard tone="glass" className="shelf-empty">
+          <h2 className="shelf-empty-title">Snowflake inventory did not load</h2>
+          <p className="shelf-empty-copy">{message}</p>
+        </GlassCard>
+      ) : status === 'loading' ? null : emptyShelf ? (
         <GlassCard tone="glass" className="shelf-empty">
           <span className="icon-chip" style={{ backgroundColor: 'var(--relay-color-aqua-300)' }}>
             <Package aria-hidden="true" size={22} />
           </span>
           <h2 className="shelf-empty-title">Your shelf is clear</h2>
           <p className="shelf-empty-copy">
-            Add a tool, a bowl set, or anything neighbors might borrow. Chat will pick it up on the
-            next inventory check.
+            Snowflake has no items listed for you yet.
           </p>
           <button type="button" className="tool-primary shelf-empty-action" onClick={openAdd}>
             <Plus aria-hidden="true" size={18} />

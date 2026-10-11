@@ -45,30 +45,42 @@ CREATE OR REPLACE TABLE REQUESTS (
 );
 
 -- Cast. Coordinates are Manhattan blocks, the backend limit is 25.
--- Avery sits at 0,0 like the backend seed.
--- Noor is 40 blocks away, so nobody near Avery owns a drill and drill
--- demand becomes a shared need.
--- Riley's laser level opens a week from now, so a weekend project this
--- weekend skips it and next weekend finds it.
--- Sam's ladder is not for lending.
--- Pressure washer is not in the catalog on purpose.
+-- Avery sits at 0,0 like the backend seed and keeps a small real shelf:
+-- a tape measure, spare notebooks, and a ladder neighbors can borrow.
+-- Nobody on the block owns a drill. Noor does, 40 blocks away, so a drill
+-- request becomes a shared purchase.
+-- Riley's laser level opens a week from now, so a project this weekend
+-- skips it. Sam's ladder stays home. The pressure washer is not in the
+-- catalog on purpose.
+-- Maya, Chris, Priya, and Elena live on the same streets and lend the
+-- tools a weekend project actually needs.
 INSERT INTO INVENTORY
 SELECT
     v.column1, v.column2, v.column3, v.column4, v.column5, v.column6, v.column7, v.column8,
     IFF(v.column9 = 'later', w.later_windows, w.open_windows)
 FROM (VALUES
-    ('avery',  'Avery Moss',  0, 0, 'Tape measure',     1, TRUE,  '25 ft, locks, a little scuffed',   'open'),
-    ('jordan', 'Jordan Lee',  2, 1, 'Level',            1, TRUE,  '9 inch torpedo level, accurate',   'open'),
-    ('jordan', 'Jordan Lee',  2, 1, 'Hand saw',         1, TRUE,  'Sharp, 15 inch blade',             'open'),
-    ('jordan', 'Jordan Lee',  2, 1, 'Bar clamps',       4, TRUE,  'Four 12 inch clamps',              'open'),
-    ('jordan', 'Jordan Lee',  2, 1, 'Pressure washer',  1, TRUE,  'Electric, 1800 PSI',               'open'),
-    ('sam',    'Sam Ortiz',   3, 3, 'Orbital sander',   1, TRUE,  'Fresh pads, five inch',            'open'),
-    ('sam',    'Sam Ortiz',   3, 3, 'Circular saw',     1, TRUE,  '7 1/4 inch blade, corded',         'open'),
-    ('sam',    'Sam Ortiz',   3, 3, 'Step ladder',      1, FALSE, 'Heavy, not lending',               'open'),
-    ('riley',  'Riley Park',  5, 2, 'Laser level',      1, TRUE,  'Self leveling, needs two AA',      'later'),
-    ('riley',  'Riley Park',  5, 2, 'Tape measure',     2, TRUE,  '25 ft',                            'open'),
-    ('riley',  'Riley Park',  5, 2, 'Quick grip clamps',2, TRUE,  'Six inch',                        'open'),
-    ('noor',   'Noor Haddad', 40, 0, 'Cordless drill',  1, TRUE,  'Two batteries and a charger',      'open')
+    ('avery',  'Avery Moss',    0, 0, 'Tape measure',      1,  TRUE,  '25 ft, locks, a little scuffed',  'open'),
+    ('avery',  'Avery Moss',    0, 0, 'Notebooks',         6,  TRUE,  'College ruled, leftover pack',    'open'),
+    ('avery',  'Avery Moss',    0, 0, 'Step ladder',       1,  TRUE,  '6 ft, folds flat',                'open'),
+    ('jordan', 'Jordan Lee',    2, 1, 'Level',             1,  TRUE,  '9 inch torpedo level, accurate',  'open'),
+    ('jordan', 'Jordan Lee',    2, 1, 'Hand saw',          1,  TRUE,  'Sharp, 15 inch blade',            'open'),
+    ('jordan', 'Jordan Lee',    2, 1, 'Bar clamps',        4,  TRUE,  'Four 12 inch clamps',             'open'),
+    ('jordan', 'Jordan Lee',    2, 1, 'Pressure washer',   1,  TRUE,  'Electric, 1800 PSI',              'open'),
+    ('sam',    'Sam Ortiz',     3, 3, 'Orbital sander',    1,  TRUE,  'Fresh pads, five inch',           'open'),
+    ('sam',    'Sam Ortiz',     3, 3, 'Circular saw',      1,  TRUE,  '7 1/4 inch blade, corded',        'open'),
+    ('sam',    'Sam Ortiz',     3, 3, 'Step ladder',       1,  FALSE, 'Heavy, not lending',              'open'),
+    ('riley',  'Riley Park',    5, 2, 'Laser level',       1,  TRUE,  'Self leveling, needs two AA',     'later'),
+    ('riley',  'Riley Park',    5, 2, 'Tape measure',      2,  TRUE,  '25 ft',                           'open'),
+    ('riley',  'Riley Park',    5, 2, 'Quick grip clamps', 2,  TRUE,  'Six inch',                        'open'),
+    ('maya',   'Maya Chen',     1, 4, 'Hand saw',          1,  TRUE,  'Pull saw, fine teeth',            'open'),
+    ('maya',   'Maya Chen',     1, 4, 'Bar clamps',        2,  TRUE,  'Two 6 inch clamps',               'open'),
+    ('chris',  'Chris Nguyen',  4, 1, 'Orbital sander',    1,  TRUE,  'Cordless, one battery',           'open'),
+    ('chris',  'Chris Nguyen',  4, 1, 'Tape measure',      1,  TRUE,  '16 ft pocket tape',               'open'),
+    ('priya',  'Priya Shah',    6, 4, 'Level',             1,  TRUE,  '24 inch box level',               'open'),
+    ('priya',  'Priya Shah',    6, 4, 'Quick grip clamps', 2,  TRUE,  '12 inch, one-handed',             'open'),
+    ('elena',  'Elena Brooks',  8, 2, 'Circular saw',      1,  TRUE,  'Cordless, 6 1/2 inch blade',      'open'),
+    ('elena',  'Elena Brooks',  8, 2, 'Notebooks',         10, TRUE,  'Composition books, unused',       'open'),
+    ('noor',   'Noor Haddad',   40, 0, 'Cordless drill',   1,  TRUE,  'Two batteries and a charger',     'open')
 ) v
 CROSS JOIN (
     SELECT
@@ -87,7 +99,16 @@ GRANT USAGE ON SCHEMA RELAY.APP TO ROLE RELAY_APP;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA RELAY.APP TO ROLE RELAY_APP;
 GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA RELAY.APP TO ROLE RELAY_APP;
 
--- Check: 12 inventory rows, 0 requests until you run seed_requests.sql.
+CREATE TABLE IF NOT EXISTS RESIDENTS (
+    CLERK_USER_ID VARCHAR NOT NULL,
+    NAME          VARCHAR NOT NULL,
+    EMAIL         VARCHAR,
+    INITIALS      VARCHAR,
+    STREET        VARCHAR,
+    UPDATED_AT    TIMESTAMP_TZ
+);
+
+-- Check: 22 inventory rows, 0 requests until you run seed_requests.sql.
 SELECT
     (SELECT COUNT(*) FROM RELAY.APP.INVENTORY) AS inventory_rows,
     (SELECT COUNT(*) FROM RELAY.APP.REQUESTS)  AS request_rows;

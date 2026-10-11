@@ -1,19 +1,44 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { api } from '../api/client.ts'
+import type { ApiInventoryItem } from '../api/types.ts'
 import {
   normalizeToolName,
-  seededInventory,
   type InventoryDraft,
   type InventoryItem,
 } from '../data/bookshelfProject.ts'
 import { InventoryContext } from './inventoryStore.ts'
 
-/** Refresh restores Avery’s known Willow Court shelf (in-memory only). */
-function createSeededInventory(): InventoryItem[] {
-  return seededInventory.map((item) => ({ ...item }))
-}
-
 export function InventoryProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<InventoryItem[]>(createSeededInventory)
+  const [items, setItems] = useState<InventoryItem[]>([])
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    let cancel = false
+    api
+      .inventory()
+      .then((body) => {
+        if (cancel) return
+        if (body.snowflake !== 'ok') {
+          setItems([])
+          setStatus('error')
+          setMessage(body.snowflake_message || 'Snowflake inventory is not available.')
+          return
+        }
+        setItems(body.items.map(toShelfItem))
+        setStatus('ready')
+        setMessage('')
+      })
+      .catch((error: unknown) => {
+        if (cancel) return
+        setItems([])
+        setStatus('error')
+        setMessage(error instanceof Error ? error.message : 'Could not load inventory.')
+      })
+    return () => {
+      cancel = true
+    }
+  }, [])
 
   const addItem = useCallback((draft: InventoryDraft) => {
     const next = sanitizeDraft(draft)
@@ -64,8 +89,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ items, addItem, updateItem, removeItem, setAvailableToLend }),
-    [items, addItem, updateItem, removeItem, setAvailableToLend],
+    () => ({ items, status, message, addItem, updateItem, removeItem, setAvailableToLend }),
+    [items, status, message, addItem, updateItem, removeItem, setAvailableToLend],
   )
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>
@@ -84,6 +109,19 @@ function sanitizeDraft(draft: InventoryDraft): Omit<InventoryItem, 'id'> | null 
     condition: draft.condition,
     notes: draft.notes.trim().replace(/\s+/g, ' '),
     availableToLend: draft.availableToLend,
+  }
+}
+
+function toShelfItem(row: ApiInventoryItem): InventoryItem {
+  const name = row.catalog_name || row.catalog_item || 'Item'
+  return {
+    id: row.inventory_id || `${row.resident_id}:${row.catalog_item}`,
+    name,
+    category: 'Tools',
+    quantity: Number(row.quantity) || 1,
+    condition: 'Good',
+    notes: row.condition_note || '',
+    availableToLend: Boolean(row.willing_to_lend),
   }
 }
 

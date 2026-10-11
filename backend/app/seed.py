@@ -79,6 +79,10 @@ NEIGHBORS = (
     {"id": "sam", "name": "Sam Ortiz", "short_name": "Sam", "street": "18 Willow Court", "x": 3, "y": 3},
     {"id": "riley", "name": "Riley Park", "short_name": "Riley", "street": "21 Willow Court", "x": 5, "y": 2},
     {"id": "noor", "name": "Noor Haddad", "short_name": "Noor", "street": "9 Far Road", "x": 40, "y": 0},
+    {"id": "maya", "name": "Maya Chen", "short_name": "Maya", "street": "12 Willow Court", "x": 1, "y": 4},
+    {"id": "chris", "name": "Chris Nguyen", "short_name": "Chris", "street": "22 Willow Court", "x": 4, "y": 1},
+    {"id": "priya", "name": "Priya Shah", "short_name": "Priya", "street": "9 Willow Court", "x": 6, "y": 4},
+    {"id": "elena", "name": "Elena Brooks", "short_name": "Elena", "street": "25 Willow Court", "x": 8, "y": 2},
 )
 
 

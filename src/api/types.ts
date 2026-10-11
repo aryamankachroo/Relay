@@ -160,3 +160,23 @@ export type ApiConflict = {
   message: string
   next_free_slot: { start: string; end: string } | null
 }
+
+export type ApiInventoryItem = {
+  inventory_id?: string
+  resident_id: string
+  resident_name: string
+  catalog_item: string
+  catalog_item_id: string | null
+  catalog_name: string
+  quantity: number
+  willing_to_lend: boolean
+  condition_note: string
+  distance?: number
+}
+
+export type ApiInventory = {
+  snowflake: string
+  snowflake_message?: string
+  items: ApiInventoryItem[]
+  resident_id?: string
+}

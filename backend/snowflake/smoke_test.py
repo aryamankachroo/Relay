@@ -69,18 +69,18 @@ check("neighbors exist in the local database", all(c in (201, 409) for c in code
 
 _, hood = call("GET", "/api/neighborhood?resident_id=avery")
 seen = {(row["resident_id"], row["catalog_item"]) for row in hood.get("items", [])}
-check("neighborhood lists 9 items", len(seen) == 9, sorted(seen))
+check("neighborhood lists 17 items", len(seen) == 17, sorted(seen))
 check("neighborhood hides Noor's drill and Sam's ladder", ("noor", "Cordless drill") not in seen and ("sam", "Step ladder") not in seen, sorted(seen))
 
 card = say("avery", "I'm building a bookshelf this weekend.")
 neighbors = {t["catalog_item_id"]: [n["resident_id"] for n in t["neighbors"]] for t in card.get("tools", [])}
 expected = {
     "drill": [],
-    "saw": ["jordan", "sam"],
-    "level": ["jordan"],
-    "sander": ["sam"],
-    "clamps": ["jordan", "riley"],
-    "tape-measure": ["riley"],
+    "saw": ["jordan", "maya", "sam", "elena"],
+    "level": ["jordan", "priya"],
+    "sander": ["chris", "sam"],
+    "clamps": ["jordan", "maya", "riley", "priya"],
+    "tape-measure": ["chris", "riley"],
 }
 check("bookshelf tool list finds the right neighbors", neighbors == expected, neighbors)
 

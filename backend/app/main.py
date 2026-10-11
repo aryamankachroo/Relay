@@ -31,7 +31,15 @@ from app.logic import (
 )
 from app.models import CatalogItem, Resident
 from app.seed import initials_for, seed
-from app.snowflake_store import status as snowflake_status
+from app.snowflake_store import SnowflakeError, status as snowflake_status, upsert_profile
+
+
+class ProfileIn(BaseModel):
+    clerk_user_id: str
+    name: str
+    email: str = ""
+    initials: str
+    street: str = "14 Willow Court"
 
 
 class ResidentIn(BaseModel):
@@ -124,6 +132,33 @@ def create_app() -> FastAPI:
             }
             for row in rows
         ]
+
+    @app.post("/api/me")
+    def save_me(body: ProfileIn, session: Session = Depends(get_session)):
+        try:
+            upsert_profile(body.clerk_user_id, body.name, body.email, body.initials, body.street)
+        except SnowflakeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        short_name = body.name.split()[0] if body.name.split() else body.initials
+        resident = session.get(Resident, body.clerk_user_id)
+        if resident is None:
+            resident = Resident(
+                id=body.clerk_user_id,
+                name=body.name,
+                short_name=short_name,
+                street=body.street,
+                initials=body.initials,
+                x=0,
+                y=0,
+            )
+        else:
+            resident.name = body.name
+            resident.short_name = short_name
+            resident.street = body.street
+            resident.initials = body.initials
+        session.add(resident)
+        session.commit()
+        return {"id": resident.id, "name": resident.name}
 
     @app.post("/api/residents", status_code=201)
     def create_resident(body: ResidentIn, session: Session = Depends(get_session)):

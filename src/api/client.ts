@@ -3,6 +3,7 @@ import type {
   ApiCatalogItem,
   ApiChatCard,
   ApiHandoff,
+  ApiInventory,
   ApiLoan,
   ApiProject,
   ApiResident,
@@ -49,6 +50,10 @@ export const api = {
   confirmRequest: (requestId: string) =>
     post<ApiChatCard>(`/api/requests/${requestId}/confirm`, { resident_id: residentId }),
   residents: () => request<ApiResident[]>('/api/residents'),
+  saveProfile: (body: { clerk_user_id: string; name: string; email: string; initials: string; street: string }) =>
+    post<{ id: string; name: string }>('/api/me', body),
+  inventory: () => request<ApiInventory>(`/api/inventory?resident_id=${residentId}`),
+  neighborhood: () => request<ApiInventory>(`/api/neighborhood?resident_id=${residentId}`),
   catalog: () => request<ApiCatalogItem[]>('/api/catalog'),
   activity: () => request<ApiActivity>('/api/activity'),
   garden: () => request<{ count: number }>('/api/garden'),

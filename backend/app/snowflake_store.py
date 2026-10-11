@@ -125,6 +125,52 @@ def fetch_requests() -> list[dict]:
         raise SnowflakeError(str(exc)) from exc
 
 
+RESIDENTS_DDL = """
+CREATE TABLE IF NOT EXISTS RESIDENTS (
+    CLERK_USER_ID VARCHAR NOT NULL,
+    NAME          VARCHAR NOT NULL,
+    EMAIL         VARCHAR,
+    INITIALS      VARCHAR,
+    STREET        VARCHAR,
+    UPDATED_AT    TIMESTAMP_TZ
+)
+"""
+
+MERGE_RESIDENT_SQL = """
+MERGE INTO RESIDENTS AS t
+USING (
+    SELECT %s AS CLERK_USER_ID, %s AS NAME, %s AS EMAIL, %s AS INITIALS, %s AS STREET
+) AS s
+ON t.CLERK_USER_ID = s.CLERK_USER_ID
+WHEN MATCHED THEN UPDATE SET
+    NAME = s.NAME,
+    EMAIL = s.EMAIL,
+    INITIALS = s.INITIALS,
+    STREET = s.STREET,
+    UPDATED_AT = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN INSERT (CLERK_USER_ID, NAME, EMAIL, INITIALS, STREET, UPDATED_AT)
+VALUES (s.CLERK_USER_ID, s.NAME, s.EMAIL, s.INITIALS, s.STREET, CURRENT_TIMESTAMP())
+"""
+
+
+def upsert_profile(clerk_user_id: str, name: str, email: str, initials: str, street: str) -> None:
+    if not configured():
+        raise SnowflakeError("Snowflake is not configured")
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(RESIDENTS_DDL)
+            except Exception as exc:
+                message = str(exc)
+                if "Insufficient privileges" not in message and "already exists" not in message.lower():
+                    raise
+            cursor.execute(MERGE_RESIDENT_SQL, (clerk_user_id, name, email, initials, street))
+            conn.commit()
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
+
+
 def update_request(request_id: str, status: str, quantity: int) -> None:
     if not configured():
         return

@@ -8,7 +8,7 @@ import {
 } from './lending.ts'
 import type { InventoryItem } from './bookshelfProject.ts'
 
-export type SceneResidentId = 'resident-avery' | (typeof demoNeighbors)[number]['id']
+export type SceneResidentId = string
 
 export type SceneResident = {
   id: SceneResidentId
@@ -90,31 +90,30 @@ export function sceneResidentById(id: string) {
   return sceneResidents.find((resident) => resident.id === id)
 }
 
-function sceneIdForResident(id: string): SceneResidentId | null {
-  if (sceneResidents.some((resident) => resident.id === id)) {
-    return id as SceneResidentId
-  }
-  return null
-}
-
 /**
  * Active and requested loans draw a path between Avery and the other party.
  * Avery may be borrower or lender. Returned loans drop off.
  */
-export function shareLinksFromLoans(loans: readonly LoanRequest[]): ShareLink[] {
+export function shareLinksFromLoans(
+  loans: readonly LoanRequest[],
+  residentIds: ReadonlySet<string> = new Set(sceneResidents.map((resident) => resident.id)),
+  viewerId = 'avery',
+): ShareLink[] {
+  const known = (id: string) => (residentIds.has(id) ? id : null)
+
   return loans.flatMap((loan) => {
     if (loan.status === 'Returned') return []
 
-    const lenderId = sceneIdForResident(loan.lenderId)
+    const lenderId = known(loan.lenderId)
     if (!lenderId) return []
 
-    if (lenderId === 'resident-avery') {
-      const borrowerId = loan.borrowerId ? sceneIdForResident(loan.borrowerId) : null
-      if (!borrowerId || borrowerId === 'resident-avery') return []
+    if (lenderId === viewerId) {
+      const borrowerId = loan.borrowerId ? known(loan.borrowerId) : null
+      if (!borrowerId || borrowerId === viewerId) return []
       return [
         {
           id: loan.id,
-          fromId: 'resident-avery' as const,
+          fromId: viewerId,
           toId: borrowerId,
           itemName: loan.itemName,
           status: loan.status,
@@ -126,7 +125,7 @@ export function shareLinksFromLoans(loans: readonly LoanRequest[]): ShareLink[] 
     return [
       {
         id: loan.id,
-        fromId: 'resident-avery' as const,
+        fromId: viewerId,
         toId: lenderId,
         itemName: loan.itemName,
         status: loan.status,

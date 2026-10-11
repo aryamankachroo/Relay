@@ -3,6 +3,8 @@ import type { InventoryDraft, InventoryItem } from '../data/bookshelfProject.ts'
 
 export type InventoryStore = {
   items: readonly InventoryItem[]
+  status: 'loading' | 'ready' | 'error'
+  message: string
   addItem: (draft: InventoryDraft) => boolean
   updateItem: (id: string, draft: InventoryDraft) => boolean
   removeItem: (id: string) => void

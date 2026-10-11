@@ -4,7 +4,7 @@ Tables the backend reads and writes, plus a demo cast. Schema is `RELAY.APP`.
 
 ## Setup
 
-1. In Snowsight, run `setup.sql` with Run all. It creates `INVENTORY` and `REQUESTS`, loads 12 inventory rows and grants `RELAY_APP` access.
+1. In Snowsight, run `setup.sql` with Run all. It creates `INVENTORY` and `REQUESTS`, loads 22 inventory rows and grants `RELAY_APP` access.
 2. Run `seed_requests.sql`. It loads 4 open requests. Run it again to reset requests between tests.
 3. Set `backend/.env`:
 
@@ -32,8 +32,8 @@ Loans and handoffs look up residents in SQLite. Without this step they return 40
 | Call | Result |
 | --- | --- |
 | `GET /health` | `snowflake: ok` |
-| `GET /api/neighborhood?resident_id=avery` | Jordan, Sam and Riley items. No Noor, no Sam's ladder |
-| Chat: "I'm building a bookshelf this weekend" | Drill has no neighbors. Level shows Jordan only. Saw shows Jordan and Sam |
+| `GET /api/neighborhood?resident_id=avery` | 17 lendable items from Jordan, Sam, Riley, Maya, Chris, Priya, and Elena. No Noor, no Sam's ladder |
+| Chat: "I'm building a bookshelf this weekend" | Drill has no neighbors. Level shows Jordan then Priya. Saw shows Jordan, Maya, Sam, and Elena |
 | Chat: "I need a drill Saturday", then "yes" | `GET /api/shared-demand` shows 3 households, $180 alone, $60 shared |
 | Chat: "I need 20 notebooks", then "yes" | Match of 12 from Jordan and 8 from Sam |
 
