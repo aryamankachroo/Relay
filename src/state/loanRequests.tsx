@@ -2,22 +2,32 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 import { formatSlotIso, loanFromApi } from '../api/adapt.ts'
 import { ApiError, api, residentId } from '../api/client.ts'
 import type { ApiConflict } from '../api/types.ts'
-import { isReturnSelectable, type LoanRequest, type NeighborMatch } from '../data/lending.ts'
+import {
+  isReturnSelectable,
+  residentLenderId,
+  type LoanRequest,
+  type NeighborMatch,
+} from '../data/lending.ts'
 import { useActivityFeed } from './activityFeedStore.ts'
+import { useCurrentResident } from './currentResident.ts'
 import { LoanRequestsContext } from './loanStore.ts'
 
 /** Borrow Tomorrow loans Avery is part of, read from the API activity poll. */
 export function LoanRequestsProvider({ children }: { children: ReactNode }) {
   const { activity, directory, refresh } = useActivityFeed()
+  const you = useCurrentResident()
 
   const requests = useMemo<LoanRequest[]>(() => {
     if (!activity || !directory) return []
     return activity.loans.flatMap((loan) => {
       if (loan.lender_id !== residentId && loan.borrower_id !== residentId) return []
       const request = loanFromApi(loan, directory)
-      return request ? [request] : []
+      if (!request) return []
+      return request.lenderId === residentLenderId
+        ? [{ ...request, lenderName: you.name, lenderInitials: you.initials }]
+        : [request]
     })
-  }, [activity, directory])
+  }, [activity, directory, you])
 
   const requestLoan = useCallback(
     async (match: NeighborMatch, pickupId: string, returnId: string) => {

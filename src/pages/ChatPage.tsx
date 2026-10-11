@@ -11,8 +11,9 @@ import {
 import { RelayMark } from '../components/RelayMark.tsx'
 import { ExchangeCard } from '../components/ExchangeCard.tsx'
 import { ToolChecklistCard } from '../components/ToolChecklistCard.tsx'
-import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { demoCommunityLabel } from '../data/index.ts'
 import { useActivityFeed } from '../state/activityFeedStore.ts'
+import { useCurrentResident } from '../state/currentResident.ts'
 
 const examples: { kicker: string; text: string; icon: LucideIcon; accent: string }[] = [
   {
@@ -181,6 +182,7 @@ export function ChatPage() {
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
+  const resident = useCurrentResident()
   const isUser = message.author === 'user'
   const isCard = message.content.type === 'card'
 
@@ -196,7 +198,11 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     >
       {isUser ? (
         <span className="chat-avatar chat-avatar-user" aria-hidden="true">
-          {demoResident.initials}
+          {resident.imageUrl ? (
+            <img src={resident.imageUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            resident.initials
+          )}
         </span>
       ) : (
         <span className="chat-avatar chat-avatar-relay" aria-hidden="true">

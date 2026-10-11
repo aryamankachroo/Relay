@@ -5,11 +5,11 @@ import { NeighborhoodScene } from '../components/NeighborhoodScene.tsx'
 import { demoCommunityLabel } from '../data/index.ts'
 import {
   itemsForResident,
-  sceneResidentById,
   sceneResidents,
   shareLinksFromLoans,
   type SceneResidentId,
 } from '../data/neighborhood.ts'
+import { useCurrentResident } from '../state/currentResident.ts'
 import { useInventory } from '../state/inventoryStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
 
@@ -18,10 +18,20 @@ export function NeighborhoodPage() {
   const panelId = useId()
   const { items } = useInventory()
   const { requests: loans } = useLoanRequests()
+  const you = useCurrentResident()
   const [selectedId, setSelectedId] = useState<SceneResidentId | null>(null)
 
+  const residents = useMemo(
+    () =>
+      sceneResidents.map((resident) =>
+        resident.isYou ? { ...resident, name: you.name, initials: you.initials } : resident,
+      ),
+    [you],
+  )
   const links = useMemo(() => shareLinksFromLoans(loans), [loans])
-  const selected = selectedId ? sceneResidentById(selectedId) : null
+  const selected = selectedId
+    ? (residents.find((resident) => resident.id === selectedId) ?? null)
+    : null
   const selectedItems = useMemo(
     () => (selectedId ? itemsForResident(selectedId, items) : []),
     [selectedId, items],
@@ -52,7 +62,7 @@ export function NeighborhoodPage() {
 
       <GlassCard tone="solid" className="hood-stage">
         <NeighborhoodScene
-          residents={sceneResidents}
+          residents={residents}
           links={links}
           selectedId={selectedId}
           onSelect={(id) => setSelectedId(id as SceneResidentId)}
@@ -119,7 +129,7 @@ export function NeighborhoodPage() {
           <p className="hood-share-title">Live from Activity</p>
           <ul className="hood-share-list">
             {activeLinks.map((link) => {
-              const lender = sceneResidentById(link.toId)
+              const lender = residents.find((resident) => resident.id === link.toId)
               return (
                 <li key={link.id}>
                   <strong>{link.itemName}</strong> with {lender?.name.split(' ')[0] ?? 'a neighbor'} ·{' '}
