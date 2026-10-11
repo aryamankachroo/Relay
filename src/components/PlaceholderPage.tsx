@@ -7,20 +7,19 @@ export function PlaceholderPage({
   description,
   note,
   icon: Icon,
-  accent,
 }: {
   kicker: string
   title: string
   description: string
   note: string
   icon: LucideIcon
-  accent: string
+  accent?: string
 }) {
   return (
     <section className="grid max-w-2xl">
       <GlassCard tone="strong" className="grid gap-4">
         <div className="flex items-center gap-4">
-          <div className="icon-chip shrink-0" style={{ '--chip': accent }}>
+          <div className="icon-chip shrink-0">
             <Icon aria-hidden="true" size={22} />
           </div>
           <div className="grid gap-1">

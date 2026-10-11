@@ -1,5 +1,15 @@
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Hammer, HandHelping, Notebook, Send, type LucideIcon } from 'lucide-react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
+import { Hammer, HandHelping, MessageCircle, Notebook, Send, type LucideIcon } from 'lucide-react'
 import { api, apiBase } from '../api/client.ts'
 import { replyFromApi } from '../chat/reply.ts'
 import {
@@ -12,40 +22,58 @@ import { RelayMark } from '../components/RelayMark.tsx'
 import { ExchangeCard } from '../components/ExchangeCard.tsx'
 import { ToolChecklistCard } from '../components/ToolChecklistCard.tsx'
 import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { sphereClass } from '../data/sectionSpheres.ts'
 import { useActivityFeed } from '../state/activityFeedStore.ts'
 
-const examples: { kicker: string; text: string; icon: LucideIcon; accent: string }[] = [
+const RelayCatCharacter = lazy(async () => {
+  const mod = await import('../components/RelayCatCharacter.tsx')
+  return { default: mod.RelayCatCharacter }
+})
+
+const examples: {
+  kicker: string
+  text: string
+  icon: LucideIcon
+  sphere: 'sky' | 'mint' | 'leaf'
+}[] = [
   {
     kicker: 'A project',
     text: "I'm building a bookshelf this weekend.",
     icon: Hammer,
-    accent: 'var(--relay-color-sky-300)',
+    sphere: 'sky',
   },
   {
     kicker: 'Something needed',
     text: 'I need 20 notebooks Saturday morning for a school supply drive.',
     icon: Notebook,
-    accent: 'var(--relay-color-mint-300)',
+    sphere: 'mint',
   },
   {
     kicker: 'To lend',
     text: 'I have a ladder to lend.',
     icon: HandHelping,
-    accent: 'var(--relay-color-leaf-300)',
+    sphere: 'leaf',
   },
 ]
 
 const inputMaxHeight = 136
 
 export function ChatPage() {
+  const headingId = useId()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const { refresh } = useActivityFeed()
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [pondEl, setPondEl] = useState<HTMLDivElement | null>(null)
+  const [catMounted, setCatMounted] = useState(false)
 
   const canSend = draft.trim().length > 0
   const announcement = latestRelayAnnouncement(messages)
+
+  useEffect(() => {
+    setCatMounted(true)
+  }, [])
 
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -99,11 +127,22 @@ export function ChatPage() {
   }
 
   return (
-    <section className="chat-page" aria-label="Chat with Relay">
-      <div className="chat-pond">
+    <section className="chat-page" aria-labelledby={headingId}>
+      <div className="chat-pond" ref={setPondEl}>
         <div className={messages.length === 0 ? 'chat-log chat-log-empty' : 'chat-log'} ref={logRef}>
           <header className="chat-welcome">
-            <h1>What are we making happen?</h1>
+            <div className="chat-hero-badge">
+              <span className="icon-chip sphere-sky">
+                <MessageCircle aria-hidden="true" size={22} />
+              </span>
+              <div className="grid gap-1">
+                <p className="eyebrow">Talk it through</p>
+                <h1 id={headingId} className="chat-title">
+                  Chat (the Robo Cat)
+                </h1>
+              </div>
+            </div>
+            <h2 className="chat-welcome-headline">What are we making happen?</h2>
             <p className="chat-intro">
               Relay is how neighbors share a project, a need, or something to give away. A few plain
               sentences are enough to start the next handoff.
@@ -113,14 +152,14 @@ export function ChatPage() {
               <div className="chat-prompts">
                 <p className="chat-prompt-label">Try one</p>
                 <div className="chat-prompt-grid">
-                  {examples.map(({ kicker, text, icon: Icon, accent }) => (
+                  {examples.map(({ kicker, text, icon: Icon, sphere }) => (
                     <button
                       key={text}
                       type="button"
                       className="chat-prompt"
                       onClick={() => void appendExchange(text)}
                     >
-                      <span className="icon-chip chat-prompt-icon" style={{ backgroundColor: accent }}>
+                      <span className={`icon-chip chat-prompt-icon ${sphereClass(sphere)}`}>
                         <Icon aria-hidden="true" size={20} />
                       </span>
                       <span className="chat-prompt-copy">
@@ -145,27 +184,36 @@ export function ChatPage() {
           {announcement}
         </p>
         <form className="chat-composer" onSubmit={onSubmit}>
-          <label className="sr-only" htmlFor="relay-message">
-            Message to Relay
-          </label>
-          <div className="chat-composer-row">
-            <textarea
-              ref={inputRef}
-              id="relay-message"
-              className="chat-input"
-              rows={1}
-              value={draft}
-              placeholder="A project, something you need, or something to give away"
-              enterKeyHint="send"
-              autoComplete="off"
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onInputKeyDown}
-            />
-            <button type="submit" className="chat-send" disabled={!canSend} aria-label="Send message">
-              <Send aria-hidden="true" size={18} />
-            </button>
+          <div className="chat-composer-shell">
+            {catMounted ? (
+              <Suspense fallback={null}>
+                <RelayCatCharacter trackingRoot={pondEl} />
+              </Suspense>
+            ) : null}
+            <div className="chat-composer-main">
+              <label className="sr-only" htmlFor="relay-message">
+                Message to Relay
+              </label>
+              <div className="chat-composer-row">
+                <textarea
+                  ref={inputRef}
+                  id="relay-message"
+                  className="chat-input"
+                  rows={1}
+                  value={draft}
+                  placeholder="A project, something you need, or something to give away"
+                  enterKeyHint="send"
+                  autoComplete="off"
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={onInputKeyDown}
+                />
+                <button type="submit" className="chat-send" disabled={!canSend} aria-label="Send message">
+                  <Send aria-hidden="true" size={18} />
+                </button>
+              </div>
+              <p className="hint chat-hint">Enter sends. Shift + Enter adds a line.</p>
+            </div>
           </div>
-          <p className="hint chat-hint">Enter sends. Shift + Enter adds a line.</p>
         </form>
       </div>
     </section>

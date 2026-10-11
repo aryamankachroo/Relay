@@ -154,7 +154,7 @@ export function MyStuffPage() {
       <GlassCard tone="strong" className="shelf-hero">
         <div className="shelf-hero-copy">
           <div className="shelf-hero-badge">
-            <span className="icon-chip" style={{ '--chip': 'var(--relay-color-mint-300)' }}>
+            <span className="icon-chip sphere-mint">
               <Package aria-hidden="true" size={22} />
             </span>
             <div className="grid gap-1">
@@ -228,7 +228,7 @@ export function MyStuffPage() {
 
       {emptyShelf ? (
         <GlassCard tone="glass" className="shelf-empty">
-          <span className="icon-chip" style={{ '--chip': 'var(--relay-color-aqua-300)' }}>
+          <span className="icon-chip sphere-aqua">
             <Package aria-hidden="true" size={22} />
           </span>
           <h2 className="shelf-empty-title">Your shelf is clear</h2>

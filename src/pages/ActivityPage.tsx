@@ -68,7 +68,7 @@ export function ActivityPage() {
     <section className="activity-page" aria-labelledby={headingId}>
       <GlassCard tone="strong" className="activity-hero">
         <div className="activity-hero-badge">
-          <span className="icon-chip" style={{ '--chip': 'var(--relay-color-aqua-300)' }}>
+          <span className="icon-chip sphere-aqua">
             <Bell aria-hidden="true" size={22} />
           </span>
           <div className="grid gap-1">
