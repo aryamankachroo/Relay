@@ -73,6 +73,15 @@ CATALOG = (
 )
 
 
+# Same ids and grid points as snowflake/create_residents.sh and the INVENTORY seed.
+NEIGHBORS = (
+    {"id": "jordan", "name": "Jordan Lee", "short_name": "Jordan", "street": "16 Willow Court", "x": 2, "y": 1},
+    {"id": "sam", "name": "Sam Ortiz", "short_name": "Sam", "street": "18 Willow Court", "x": 3, "y": 3},
+    {"id": "riley", "name": "Riley Park", "short_name": "Riley", "street": "21 Willow Court", "x": 5, "y": 2},
+    {"id": "noor", "name": "Noor Haddad", "short_name": "Noor", "street": "9 Far Road", "x": 40, "y": 0},
+)
+
+
 def initials_for(name: str) -> str:
     parts = [part for part in name.split() if part]
     if len(parts) >= 2:
@@ -93,6 +102,9 @@ def seed(session: Session) -> None:
                 y=0,
             )
         )
+    for row in NEIGHBORS:
+        if session.get(Resident, row["id"]) is None:
+            session.add(Resident(**row, initials=initials_for(row["name"])))
     if session.exec(select(CatalogItem)).first() is None:
         for row in CATALOG:
             session.add(

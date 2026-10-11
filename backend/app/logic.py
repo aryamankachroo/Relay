@@ -96,6 +96,15 @@ def apply_no(session: Session, resident_id: str) -> dict:
     return {"type": "no_match", "message": "Nothing is waiting for a yes or no."}
 
 
+def confirm_request(session: Session, request_id: str, resident_id: str) -> dict:
+    request = session.get(Request, request_id)
+    if request is None or request.resident_id != resident_id:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if request.status != "pending_confirm":
+        raise HTTPException(status_code=409, detail="This request was already answered")
+    return publish_and_match(session, request)
+
+
 def publish_and_match(session: Session, pending: Request) -> dict:
     _publish(session, pending)
     card = _match_open_request(session, pending.id)
@@ -891,7 +900,9 @@ def _inventory_item(row: dict, match: CatalogItem | None) -> dict:
     willing = row.get("willing_to_lend")
     if isinstance(willing, str):
         willing = willing.strip().lower() in {"1", "true", "yes", "y"}
+    item_key = match.id if match else row.get("catalog_item")
     return {
+        "inventory_id": str(row.get("inventory_id") or row.get("id") or f"{row.get('resident_id')}:{item_key}"),
         "resident_id": row.get("resident_id"),
         "resident_name": row.get("resident_name"),
         "x": row.get("x") or 0,
@@ -935,6 +946,7 @@ def _match_card(session: Session, handoff: Handoff, need: dict, complete: bool) 
         "type": "match",
         "handoff_id": handoff.id,
         "need_request_id": need["id"],
+        "recipient_id": handoff.recipient_id,
         "item": {"id": need["catalog_item_id"], "name": item.name if item else need["catalog_item_id"]},
         "quantity": need["quantity"],
         "filled_quantity": filled,

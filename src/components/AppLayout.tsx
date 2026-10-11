@@ -2,9 +2,7 @@ import { Bell, Flower2, Map, MessageCircle, Package, type LucideIcon } from 'luc
 import { Link, NavLink, Outlet } from 'react-router'
 import { UserButton } from '@clerk/react-router'
 import { demoCommunityLabel, demoResident } from '../data/index.ts'
-import { countCompletedReuse } from '../data/reuse.ts'
-import { useHandoffs } from '../state/handoffStore.ts'
-import { useLoanRequests } from '../state/loanStore.ts'
+import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { Atmosphere } from './Atmosphere.tsx'
 import { RelayMark } from './RelayMark.tsx'
 
@@ -100,9 +98,8 @@ function PrimaryNav({ layout }: { layout: 'side' | 'dock' }) {
 }
 
 function ReuseCounter({ compact = false }: { compact?: boolean }) {
-  const { requests: loans } = useLoanRequests()
-  const { handoffs } = useHandoffs()
-  const count = countCompletedReuse(loans, handoffs)
+  const { gardenCount } = useActivityFeed()
+  const count = gardenCount ?? 0
 
   return (
     <div

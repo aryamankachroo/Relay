@@ -8,14 +8,14 @@ import {
   loanActionLabel,
   loanStatusCopy,
   loanStatusSteps,
-  matchesForTool,
   type LoanRequest,
   type NeighborMatch,
   type PickupWindow,
   type ReturnWindow,
 } from '../data/lending.ts'
-import type { ChecklistTool, InventoryItem } from '../data/bookshelfProject.ts'
-import { useInventory } from '../state/inventoryStore.ts'
+import { neighborMatch, type Directory, type ProjectTool } from '../api/adapt.ts'
+import type { ApiWindow } from '../api/types.ts'
+import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
 import { statusTone } from '../data/status.ts'
 import { StatusBadge, StatusTimeline } from './StatusTimeline.tsx'
@@ -23,9 +23,15 @@ import { ToolPortrait } from './ToolPortrait.tsx'
 
 type LoanStep = 'schedule' | 'confirm'
 
-export function NeighborMatchList({ tools }: { tools: readonly ChecklistTool[] }) {
+export function NeighborMatchList({
+  tools,
+  projectWindow,
+}: {
+  tools: readonly ProjectTool[]
+  projectWindow: ApiWindow | null
+}) {
   const headingId = useId()
-  const { items } = useInventory()
+  const { directory } = useActivityFeed()
   const { requests, requestLoan, advanceLoan } = useLoanRequests()
 
   return (
@@ -42,7 +48,8 @@ export function NeighborMatchList({ tools }: { tools: readonly ChecklistTool[] }
         <ToolMatchGroup
           key={tool.id}
           tool={tool}
-          inventory={items}
+          projectWindow={projectWindow}
+          directory={directory}
           requests={requests}
           onRequestLoan={requestLoan}
           onAdvanceLoan={advanceLoan}
@@ -54,19 +61,23 @@ export function NeighborMatchList({ tools }: { tools: readonly ChecklistTool[] }
 
 function ToolMatchGroup({
   tool,
-  inventory,
+  projectWindow,
+  directory,
   requests,
   onRequestLoan,
   onAdvanceLoan,
 }: {
-  tool: ChecklistTool
-  inventory: readonly InventoryItem[]
+  tool: ProjectTool
+  projectWindow: ApiWindow | null
+  directory: Directory | null
   requests: readonly LoanRequest[]
-  onRequestLoan: (match: NeighborMatch, pickupId: string, returnId: string) => void
+  onRequestLoan: (match: NeighborMatch, pickupId: string, returnId: string) => Promise<string | null>
   onAdvanceLoan: (requestId: string) => void
 }) {
   const headingId = useId()
-  const matches = matchesForTool(tool.name, inventory)
+  const matches = tool.neighbors.map((neighbor) =>
+    neighborMatch(tool, neighbor, projectWindow, directory),
+  )
 
   return (
     <section className="match-group" aria-labelledby={headingId}>
@@ -110,11 +121,13 @@ export function NeighborMatchCard({
 }: {
   match: NeighborMatch
   request: LoanRequest | null
-  onRequestLoan: (pickupId: string, returnId: string) => void
+  onRequestLoan: (pickupId: string, returnId: string) => Promise<string | null>
   onAdvanceLoan: () => void
 }) {
   const titleId = useId()
   const formId = useId()
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
   const cardRef = useRef<HTMLElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -175,20 +188,24 @@ export function NeighborMatchCard({
     setReturnId('')
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!ready || !pickup || !due) return
+    if (!ready || !pickup || !due || sending) return
     if (step === 'schedule') {
       setStep('confirm')
       return
     }
-    onRequestLoan(pickup.id, due.id)
+    setSending(true)
+    setSendError('')
+    const problem = await onRequestLoan(pickup.id, due.id)
+    setSending(false)
+    if (problem) setSendError(problem)
   }
 
   return (
     <article className="match-card" aria-labelledby={titleId} ref={cardRef}>
       <div className="match-top">
-        <ToolPortrait portrait={match.portrait} />
+        <ToolPortrait portrait={match.portrait} fallbackLabel={match.itemName} />
         <div className="match-copy">
           <div className="match-title-row">
             <h5 id={titleId} className="match-title">
@@ -248,7 +265,7 @@ export function NeighborMatchCard({
           Request this loan
         </button>
       ) : (
-        <form className="loan-form" ref={formRef} onSubmit={onSubmit}>
+        <form className="loan-form" ref={formRef} onSubmit={(event) => void onSubmit(event)}>
           {step === 'schedule' ? (
             <>
               <p className="loan-form-hint">Pick an open window. Closed times stay unavailable.</p>
@@ -307,9 +324,18 @@ export function NeighborMatchCard({
               </dl>
             </div>
           )}
+          {sendError ? (
+            <p className="loan-form-hint" role="alert">
+              {sendError}
+            </p>
+          ) : null}
           <div className="loan-actions" ref={actionsRef}>
-            <button className="tool-primary" type="submit" disabled={step === 'schedule' && !ready}>
-              {step === 'schedule' ? 'Review request' : 'Send request'}
+            <button
+              className="tool-primary"
+              type="submit"
+              disabled={(step === 'schedule' && !ready) || sending}
+            >
+              {step === 'schedule' ? 'Review request' : sending ? 'Sending…' : 'Send request'}
             </button>
             <button
               type="button"

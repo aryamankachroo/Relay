@@ -1,35 +1,55 @@
 import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Circle, ClipboardCheck, Plus, X } from 'lucide-react'
 import { NeighborMatchList } from './NeighborMatchCard.tsx'
-import {
-  createBookshelfChecklist,
-  normalizeToolName,
-  splitByInventory,
-  type ChecklistTool,
-  type InventorySplit,
-} from '../data/bookshelfProject.ts'
-import { useInventory } from '../state/inventoryStore.ts'
+import { projectTools, type ProjectTool } from '../api/adapt.ts'
+import { api } from '../api/client.ts'
+import type { ApiCatalogItem, ApiProject, ApiProjectTool, ApiWindow } from '../api/types.ts'
+import { normalizeToolName, type ChecklistTool, type InventorySplit } from '../data/bookshelfProject.ts'
+import { useActivityFeed } from '../state/activityFeedStore.ts'
 
 const toolNameMaxLength = 40
 
-export function ToolChecklistCard({ title, summary }: { title: string; summary: string }) {
+export function ToolChecklistCard({
+  title,
+  summary,
+  projectId,
+  window,
+  tools: initialTools,
+}: {
+  title: string
+  summary: string
+  projectId: string
+  window: ApiWindow | null
+  tools: ApiProjectTool[]
+}) {
   const titleId = useId()
   const addInputId = useId()
   const addNoteId = useId()
   const resultRef = useRef<HTMLDivElement>(null)
-  const { items } = useInventory()
-  const [tools, setTools] = useState<ChecklistTool[]>(createBookshelfChecklist)
+  const { directory } = useActivityFeed()
+  const [tools, setTools] = useState<ProjectTool[]>(() => projectTools(initialTools))
   const [draftName, setDraftName] = useState('')
   const [addNote, setAddNote] = useState('')
   const [checked, setChecked] = useState(false)
 
-  const split = checked ? splitByInventory(tools, items) : null
+  const split = checked ? splitByHaveAlready(tools) : null
   const canAdd = draftName.trim().length > 0
 
   useLayoutEffect(() => {
     if (!checked) return
     scrollResultIntoView(resultRef.current)
   }, [checked])
+
+  async function save(change: Promise<ApiProject>) {
+    try {
+      const project = await change
+      setTools((current) => projectTools(project.tools, current))
+      return true
+    } catch (caught) {
+      setAddNote(caught instanceof Error ? caught.message : 'The list could not be saved.')
+      return false
+    }
+  }
 
   function toggleSelected(id: string) {
     setTools((current) =>
@@ -38,32 +58,40 @@ export function ToolChecklistCard({ title, summary }: { title: string; summary: 
   }
 
   function toggleRequired(id: string) {
-    setTools((current) =>
-      current.map((tool) => (tool.id === id ? { ...tool, required: !tool.required } : tool)),
-    )
+    const tool = tools.find((item) => item.id === id)
+    if (!tool) return
+    void save(api.updateTool(projectId, id, { optional: tool.required }))
   }
 
   function removeTool(id: string) {
-    setTools((current) => current.filter((tool) => tool.id !== id))
+    void save(api.removeTool(projectId, id))
   }
 
-  function onAddTool(event: FormEvent<HTMLFormElement>) {
+  async function onAddTool(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const name = draftName.trim().replace(/\s+/g, ' ')
     if (!name) return
 
-    const duplicate = tools.some((tool) => normalizeToolName(tool.name) === normalizeToolName(name))
-    if (duplicate) {
+    const catalog = directory ? [...directory.catalog.values()] : await api.catalog().catch(() => [])
+    const item = catalogItemNamed(name, catalog)
+    if (!item) {
+      const known = catalog.filter((row) => row.category === 'tool').map((row) => row.name.toLowerCase())
+      setAddNote(
+        known.length > 0
+          ? `Not in the catalog yet. Try ${known.join(', ')}.`
+          : 'Not in the catalog yet.',
+      )
+      return
+    }
+    if (tools.some((tool) => tool.catalogItemId === item.id)) {
       setAddNote('Already on the list.')
       return
     }
 
-    setTools((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name, required: true, selected: true },
-    ])
-    setDraftName('')
-    setAddNote('')
+    if (await save(api.addTool(projectId, item.id))) {
+      setDraftName('')
+      setAddNote('')
+    }
   }
 
   function onCheckInventory() {
@@ -130,7 +158,7 @@ export function ToolChecklistCard({ title, summary }: { title: string; summary: 
       )}
       <p className="hint tool-card-hint">Only checked tools are compared with your inventory.</p>
       <div className="tool-add-block">
-        <form className="tool-add" onSubmit={onAddTool}>
+        <form className="tool-add" onSubmit={(event) => void onAddTool(event)}>
           <label className="sr-only" htmlFor={addInputId}>
             Tool name
           </label>
@@ -171,11 +199,33 @@ export function ToolChecklistCard({ title, summary }: { title: string; summary: 
               <p className="sr-only">Nearby matches for the tools you need are listed below.</p>
             ) : null}
           </div>
-          {split.missing.length > 0 ? <NeighborMatchList tools={split.missing} /> : null}
+          {split.missing.length > 0 ? (
+            <NeighborMatchList tools={split.missing} projectWindow={window} />
+          ) : null}
         </div>
       ) : null}
     </div>
   )
+}
+
+/** The API marks tools Avery already owns, from the Snowflake inventory. */
+function splitByHaveAlready(tools: readonly ProjectTool[]) {
+  const selected = tools.filter((tool) => tool.selected)
+  return {
+    owned: selected.filter((tool) => tool.haveAlready),
+    missing: selected.filter((tool) => !tool.haveAlready),
+  }
+}
+
+function catalogItemNamed(name: string, catalog: readonly ApiCatalogItem[]) {
+  const key = normalizeToolName(name)
+  const singular = key.endsWith('s') ? key.slice(0, -1) : key
+  return catalog.find((item) => {
+    const itemName = normalizeToolName(item.name)
+    return [itemName, item.id.replace(/-/g, ' ')].some(
+      (candidate) => candidate === key || candidate === singular || candidate === `${key}s`,
+    )
+  })
 }
 
 function InventoryResult({ split }: { split: InventorySplit }) {

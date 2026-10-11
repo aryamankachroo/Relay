@@ -34,3 +34,6 @@ backend/relay.db
 backend/.pytest_cache
 **/__pycache__/
 *.pyc
+
+# clerk configuration (can include secrets)
+/.clerk/

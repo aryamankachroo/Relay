@@ -3,8 +3,9 @@ import type { LoanRequest, NeighborMatch } from '../data/lending.ts'
 
 export type LoanStore = {
   requests: readonly LoanRequest[]
-  requestLoan: (match: NeighborMatch, pickupId: string, returnId: string) => void
-  advanceLoan: (requestId: string) => void
+  /** Resolves to a message the card can show when the request was not sent. */
+  requestLoan: (match: NeighborMatch, pickupId: string, returnId: string) => Promise<string | null>
+  advanceLoan: (requestId: string) => Promise<void>
 }
 
 export const LoanRequestsContext = createContext<LoanStore | null>(null)

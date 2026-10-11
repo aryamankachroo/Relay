@@ -1,5 +1,4 @@
 import {
-  bookshelfProject,
   normalizeToolName,
   ownedInventoryNames,
   seededInventory,
@@ -33,9 +32,6 @@ export const demoNeighbors = [
   },
 ] as const
 
-export type DemoNeighbor = (typeof demoNeighbors)[number]
-export type NeighborId = DemoNeighbor['id']
-export type LendableToolName = (typeof bookshelfProject.tools)[number]['name']
 export type ToolCondition = 'Excellent' | 'Good' | 'Fair'
 export type ToolPortraitId = 'circular-saw' | 'hand-saw' | 'orbital-sander' | 'cordless-drill'
 
@@ -44,6 +40,8 @@ export type ReturnWindow = {
   label: string
   available: boolean
   closedNote?: string
+  /** ISO time the item is due back, when the window came from the API. */
+  end?: string
 }
 
 export type PickupWindow = {
@@ -53,14 +51,24 @@ export type PickupWindow = {
   closedNote?: string
   /** Return windows this neighbor will accept after this pickup. */
   returnWindowIds: readonly string[]
+  start?: string
+  end?: string
+}
+
+export type NeighborPerson = {
+  id: string
+  name: string
+  initials: string
+  street: string
 }
 
 export type NeighborListing = {
   id: string
-  toolName: LendableToolName
+  toolName: string
   itemName: string
-  portrait: ToolPortraitId
-  residentId: NeighborId
+  portrait?: ToolPortraitId
+  residentId: string
+  catalogItemId?: string
   distance: string
   condition: ToolCondition
   notes: string
@@ -69,7 +77,7 @@ export type NeighborListing = {
 }
 
 export type NeighborMatch = NeighborListing & {
-  resident: DemoNeighbor
+  resident: NeighborPerson
 }
 
 export type LoanStatus = 'Requested' | 'Confirmed' | 'Picked up' | 'Returned'

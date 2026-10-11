@@ -11,6 +11,7 @@ from app.logic import (
     activity,
     add_tool,
     confirm_handoff,
+    confirm_request,
     create_loan,
     decline_handoff,
     garden_count,
@@ -158,6 +159,14 @@ def create_app() -> FastAPI:
     @app.post("/api/chat")
     def chat(body: ChatIn, session: Session = Depends(get_session)):
         return handle_chat(session, body.resident_id, body.message)
+
+    @app.post("/api/requests/{request_id}/confirm")
+    def post_confirm_request(
+        request_id: str,
+        body: ResidentAction,
+        session: Session = Depends(get_session),
+    ):
+        return confirm_request(session, request_id, body.resident_id)
 
     @app.get("/api/projects")
     def list_projects(resident_id: str = "avery", session: Session = Depends(get_session)):

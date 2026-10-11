@@ -9,7 +9,6 @@ import {
   handoffStatusSteps,
   isHandoffComplete,
   knownItemIn,
-  matchesForExchange,
   sanitizeExchange,
   suggestedSelection,
   type CommunityMatch,
@@ -27,20 +26,28 @@ const itemMaxLength = 40
 const placeMaxLength = 60
 const windowMaxLength = 48
 
-export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
+export function ExchangeCard({
+  draft,
+  requestId: pendingRequestId,
+}: {
+  draft: ExchangeDraft
+  requestId: string
+}) {
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
-  const lock = useRef(false)
-  const { requests, handoffs, postExchange, updateExchange, arrangeHandoff, advanceHandoff } =
-    useHandoffs()
+  const { requests, handoffs, confirmExchange, advanceHandoff } = useHandoffs()
   const [fields, setFields] = useState(draft)
   const [editing, setEditing] = useState(true)
+  const [pendingId, setPendingId] = useState<string | null>(pendingRequestId)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
+  const [sending, setSending] = useState(false)
+  const [notice, setNotice] = useState('')
 
   const request = requests.find((item) => item.id === requestId) ?? null
   const handoff = handoffs.find((item) => item.requestId === requestId) ?? null
-  const ready = fields.item.trim().length > 0 && fields.quantity >= 1 && fields.quantity <= 99
+  const ready =
+    fields.item.trim().length > 0 && fields.quantity >= 1 && fields.quantity <= 99 && !sending
 
   useLayoutEffect(() => {
     if (editing) return
@@ -48,16 +55,22 @@ export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
     panelRef.current?.focus({ preventScroll: true })
   }, [editing, requestId, handoff?.id])
 
-  function onConfirmDetails(event: FormEvent<HTMLFormElement>) {
+  async function onConfirmDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const next = sanitizeExchange(fields)
-    if (!next) return
+    if (!next || sending) return
 
-    if (requestId) updateExchange(requestId, next)
-    else setRequestId(postExchange(next).id)
-
+    setSending(true)
+    setNotice('')
+    const unchanged = pendingId !== null && sameDraft(next, draft)
+    const result = await confirmExchange(next, unchanged ? pendingId : null)
+    setSending(false)
     setFields(next)
-    setSelected(suggestedSelection(next.quantity, matchesForExchange(next)))
+    setNotice(result.message ?? '')
+    if (!result.requestId) return
+
+    setPendingId(null)
+    setRequestId(result.requestId)
     setEditing(false)
   }
 
@@ -70,27 +83,8 @@ export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
       pickupArea: request.pickupArea,
       windowLabel: request.windowLabel,
     })
+    setNotice('')
     setEditing(true)
-  }
-
-  function onArrangeHandoff(parts: HandoffPart[]) {
-    if (lock.current || !request || parts.length === 0) return
-    lock.current = true
-    const record = arrangeHandoff(request.id, parts)
-    if (record) {
-      const remaining = Math.max(0, request.quantity - record.quantity)
-      if (remaining > 0) {
-        const claimed = new Set(record.parts.map((part) => part.listingId))
-        const open = matchesForExchange(request).filter((match) => !claimed.has(match.id))
-        setSelected(suggestedSelection(remaining, open))
-      } else {
-        setSelected([])
-      }
-    }
-    // Release so a second arrange can fill remaining quantity on a partial match.
-    queueMicrotask(() => {
-      lock.current = false
-    })
   }
 
   return (
@@ -109,13 +103,20 @@ export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
         </p>
       </div>
       {editing ? (
-        <ExchangeEditor
-          fields={fields}
-          ready={ready}
-          labelledBy={titleId}
-          onChange={setFields}
-          onSubmit={onConfirmDetails}
-        />
+        <>
+          <ExchangeEditor
+            fields={fields}
+            ready={ready}
+            labelledBy={titleId}
+            onChange={setFields}
+            onSubmit={(event) => void onConfirmDetails(event)}
+          />
+          {notice ? (
+            <p className="tool-add-note" role="alert">
+              {notice}
+            </p>
+          ) : null}
+        </>
       ) : request ? (
         <div className="exchange-followup" ref={panelRef} tabIndex={-1}>
           <div className="loan-summary">
@@ -125,6 +126,7 @@ export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
           <ExchangeMatches
             request={request}
             handoff={handoff}
+            listings={[]}
             selected={selected}
             onToggle={(id) =>
               setSelected((current) =>
@@ -132,9 +134,9 @@ export function ExchangeCard({ draft }: { draft: ExchangeDraft }) {
               )
             }
             onEdit={onEdit}
-            onArrange={onArrangeHandoff}
+            onArrange={() => undefined}
             onAdvance={() => {
-              if (handoff) advanceHandoff(handoff.id)
+              if (handoff) void advanceHandoff(handoff.id)
             }}
           />
         </div>
@@ -316,6 +318,7 @@ function ExchangeFacts({ request }: { request: ExchangeRequest }) {
 function ExchangeMatches({
   request,
   handoff,
+  listings,
   selected,
   onToggle,
   onEdit,
@@ -324,6 +327,8 @@ function ExchangeMatches({
 }: {
   request: ExchangeRequest
   handoff: HandoffRecord | null
+  /** Open posts the resident can still pick; the API already allocated its match into `handoff`. */
+  listings: readonly CommunityMatch[]
   selected: readonly string[]
   onToggle: (id: string) => void
   onEdit: () => void
@@ -335,7 +340,7 @@ function ExchangeMatches({
   const remaining = Math.max(0, request.quantity - request.fulfilled)
   const canAddMore =
     remaining > 0 && (!handoff || handoff.status === 'Pending confirmation')
-  const matches = matchesForExchange(request).filter((match) => !claimedIds.has(match.id))
+  const matches = listings.filter((match) => !claimedIds.has(match.id))
   const ordered = [...matches].sort((left, right) => Number(right.available) - Number(left.available))
   const allocations = allocateQuantity(remaining, ordered, selected)
   const covered = allocations.reduce((sum, part) => sum + part.quantity, 0)
@@ -690,6 +695,18 @@ function toHandoffPart(listing: CommunityMatch, quantity: number): HandoffPart {
     distance: listing.distance,
     windowLabel: listing.windowLabel,
   }
+}
+
+function sameDraft(next: ExchangeDraft, original: ExchangeDraft) {
+  const before = sanitizeExchange(original)
+  return (
+    before !== null &&
+    next.kind === before.kind &&
+    next.item.toLowerCase() === before.item.toLowerCase() &&
+    next.quantity === before.quantity &&
+    next.pickupArea === before.pickupArea &&
+    next.windowLabel === before.windowLabel
+  )
 }
 
 function alignItemLabel(item: string, quantity: number) {

@@ -1,26 +1,21 @@
-import { useId, useMemo } from 'react'
+import { useId } from 'react'
 import { Flower2 } from 'lucide-react'
 import { GlassCard } from '../components/GlassCard.tsx'
 import { GardenScene } from '../components/GardenScene.tsx'
 import { isHandoffComplete } from '../data/exchanges.ts'
 import { isLoanComplete } from '../data/lending.ts'
-import {
-  countCompletedReuse,
-  gardenStageForCount,
-  gardenStageLabel,
-} from '../data/reuse.ts'
+import { gardenStageForCount, gardenStageLabel } from '../data/reuse.ts'
+import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useHandoffs } from '../state/handoffStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
 
 export function GardenPage() {
   const headingId = useId()
+  const { gardenCount } = useActivityFeed()
   const { requests: loans } = useLoanRequests()
   const { handoffs } = useHandoffs()
 
-  const reuseCount = useMemo(
-    () => countCompletedReuse(loans, handoffs),
-    [loans, handoffs],
-  )
+  const reuseCount = gardenCount ?? 0
   const stage = gardenStageForCount(reuseCount)
   const completedLoans = loans.filter((loan) => isLoanComplete(loan.status)).length
   const completedHandoffs = handoffs.filter((handoff) => isHandoffComplete(handoff.status)).length

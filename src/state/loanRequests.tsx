@@ -1,150 +1,66 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { demoResident } from '../data/index.ts'
-import {
-  isReturnSelectable,
-  nextLoanStatus,
-  residentLenderId,
-  type LoanRequest,
-  type NeighborMatch,
-} from '../data/lending.ts'
+import { useCallback, useMemo, type ReactNode } from 'react'
+import { formatSlotIso, loanFromApi } from '../api/adapt.ts'
+import { ApiError, api, residentId } from '../api/client.ts'
+import type { ApiConflict } from '../api/types.ts'
+import { isReturnSelectable, type LoanRequest, type NeighborMatch } from '../data/lending.ts'
+import { useActivityFeed } from './activityFeedStore.ts'
 import { LoanRequestsContext } from './loanStore.ts'
 
-/**
- * Seeded Borrow Tomorrow loans for the hackathon walkthrough.
- * Refresh reloads this known set (in-memory only — no persistence).
- * Stages: Requested (accept), Picked up (return), Returned (Garden count).
- * Jordan’s hand saw is left open so Chat can demonstrate a fresh request.
- * Avery-as-lender seeds cover incoming accept + an item already out on loan.
- */
-function createSeededLoans(): LoanRequest[] {
-  return [
-    {
-      id: 'loan-seed-priya-saw',
-      listingId: 'listing-priya-saw',
-      toolName: 'Saw',
-      itemName: 'Circular saw',
-      lenderId: 'neighbor-priya',
-      lenderName: 'Priya Shah',
-      lenderInitials: 'PS',
-      portrait: 'circular-saw',
-      pickupWindowId: 'priya-pick-sat-9',
-      pickupLabel: 'Saturday, 9–11 am',
-      returnWindowId: 'priya-back-sun-5',
-      returnLabel: 'Sunday by 5 pm',
-      status: 'Requested',
-    },
-    {
-      id: 'loan-seed-elena-sander',
-      listingId: 'listing-elena-sander',
-      toolName: 'Sander',
-      itemName: 'Orbital sander',
-      lenderId: 'neighbor-elena',
-      lenderName: 'Elena Voss',
-      lenderInitials: 'EV',
-      portrait: 'orbital-sander',
-      pickupWindowId: 'elena-pick-sat-10',
-      pickupLabel: 'Saturday, 10 am–12 pm',
-      returnWindowId: 'elena-back-sun-6',
-      returnLabel: 'Sunday by 6 pm',
-      status: 'Picked up',
-    },
-    {
-      id: 'loan-seed-returned-drill',
-      listingId: 'listing-maya-drill',
-      toolName: 'Drill',
-      itemName: 'Cordless drill',
-      lenderId: 'neighbor-maya',
-      lenderName: 'Maya Chen',
-      lenderInitials: 'MC',
-      portrait: 'cordless-drill',
-      pickupWindowId: 'past-pick',
-      pickupLabel: 'Last Saturday, 10 am–12 pm',
-      returnWindowId: 'past-return',
-      returnLabel: 'Last Sunday by 5 pm',
-      status: 'Returned',
-    },
-    {
-      id: 'loan-seed-incoming-hammer',
-      listingId: 'inv-hammer',
-      toolName: 'Hammer',
-      itemName: 'Hammer',
-      lenderId: residentLenderId,
-      lenderName: demoResident.name,
-      lenderInitials: demoResident.initials,
-      inventoryItemId: 'inv-hammer',
-      borrowerId: 'neighbor-jordan',
-      borrowerName: 'Jordan Hale',
-      borrowerInitials: 'JH',
-      pickupWindowId: 'avery-pick-sat-2',
-      pickupLabel: 'Saturday, 2–4 pm',
-      returnWindowId: 'avery-back-sun-5',
-      returnLabel: 'Sunday by 5 pm',
-      status: 'Requested',
-    },
-    {
-      id: 'loan-seed-outbound-cord',
-      listingId: 'inv-extension-cord',
-      toolName: 'Extension cord',
-      itemName: 'Extension cord',
-      lenderId: residentLenderId,
-      lenderName: demoResident.name,
-      lenderInitials: demoResident.initials,
-      inventoryItemId: 'inv-extension-cord',
-      borrowerId: 'neighbor-priya',
-      borrowerName: 'Priya Shah',
-      borrowerInitials: 'PS',
-      pickupWindowId: 'avery-pick-fri-5',
-      pickupLabel: 'Friday, 5–6 pm',
-      returnWindowId: 'avery-back-mon-9',
-      returnLabel: 'Monday by 9 am',
-      status: 'Picked up',
-    },
-  ]
-}
-
+/** Borrow Tomorrow loans Avery is part of, read from the API activity poll. */
 export function LoanRequestsProvider({ children }: { children: ReactNode }) {
-  const [requests, setRequests] = useState<LoanRequest[]>(createSeededLoans)
+  const { activity, directory, refresh } = useActivityFeed()
 
-  const requestLoan = useCallback((match: NeighborMatch, pickupId: string, returnId: string) => {
-    const pickup = match.pickupWindows.find((window) => window.id === pickupId)
-    const due = match.returnWindows.find((window) => window.id === returnId)
-    if (!pickup || !due || !isReturnSelectable(pickup, due)) return
-
-    setRequests((current) => {
-      const openDuplicate = current.some(
-        (loan) => loan.listingId === match.id && loan.status !== 'Returned',
-      )
-      if (openDuplicate) return current
-      return [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          listingId: match.id,
-          toolName: match.toolName,
-          itemName: match.itemName,
-          lenderId: match.resident.id,
-          lenderName: match.resident.name,
-          lenderInitials: match.resident.initials,
-          portrait: match.portrait,
-          pickupWindowId: pickup.id,
-          pickupLabel: pickup.label,
-          returnWindowId: due.id,
-          returnLabel: due.label,
-          status: 'Requested',
-        },
-      ]
+  const requests = useMemo<LoanRequest[]>(() => {
+    if (!activity || !directory) return []
+    return activity.loans.flatMap((loan) => {
+      if (loan.lender_id !== residentId && loan.borrower_id !== residentId) return []
+      const request = loanFromApi(loan, directory)
+      return request ? [request] : []
     })
-  }, [])
+  }, [activity, directory])
 
-  const advanceLoan = useCallback((requestId: string) => {
-    setRequests((current) => {
-      const target = current.find((loan) => loan.id === requestId)
-      if (!target) return current
-      const next = nextLoanStatus(target.status)
-      if (!next) return current
-      return current.map((loan) => (loan.id === requestId ? { ...loan, status: next } : loan))
-    })
-  }, [])
+  const requestLoan = useCallback(
+    async (match: NeighborMatch, pickupId: string, returnId: string) => {
+      const pickup = match.pickupWindows.find((window) => window.id === pickupId)
+      const due = match.returnWindows.find((window) => window.id === returnId)
+      if (!pickup || !due || !isReturnSelectable(pickup, due)) return 'Choose an open pickup and return.'
+      if (!pickup.start || !due.end || !match.catalogItemId) return 'This listing has no bookable time.'
+
+      try {
+        await api.createLoan({
+          lender_id: match.resident.id,
+          catalog_item_id: match.catalogItemId,
+          window_start: pickup.start,
+          window_end: due.end,
+          inventory_id: match.id,
+        })
+      } catch (caught) {
+        return loanProblem(caught)
+      }
+      await refresh()
+      return null
+    },
+    [refresh],
+  )
+
+  const advanceLoan = useCallback(
+    async (requestId: string) => {
+      const loan = requests.find((item) => item.id === requestId)
+      if (!loan) return
+      const step =
+        loan.status === 'Requested'
+          ? api.respondLoan(loan.id, 'accept')
+          : loan.status === 'Confirmed'
+            ? api.pickupLoan(loan.id)
+            : loan.status === 'Picked up'
+              ? api.returnLoan(loan.id)
+              : null
+      // A 409 means another tab already moved this loan; the refresh shows where it is.
+      await step?.catch(() => null)
+      await refresh()
+    },
+    [requests, refresh],
+  )
 
   const value = useMemo(
     () => ({ requests, requestLoan, advanceLoan }),
@@ -152,4 +68,17 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
   )
 
   return <LoanRequestsContext.Provider value={value}>{children}</LoanRequestsContext.Provider>
+}
+
+function loanProblem(caught: unknown) {
+  if (caught instanceof ApiError && caught.status === 409) {
+    const detail = caught.detail as Partial<ApiConflict> | null
+    const slot = detail?.next_free_slot
+    const next = slot ? formatSlotIso(slot.start, slot.end) : ''
+    return next
+      ? `That time is already booked. The next free time is ${next}.`
+      : 'That time is already booked, and nothing is free in the next week.'
+  }
+  if (caught instanceof Error) return caught.message
+  return 'The request did not go through. Try again.'
 }

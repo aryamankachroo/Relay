@@ -1,253 +1,83 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import {
-  nextHandoffStatus,
-  type ExchangeDraft,
-  type ExchangeRequest,
-  type HandoffPart,
-  type HandoffRecord,
-} from '../data/exchanges.ts'
+import { useCallback, useMemo, type ReactNode } from 'react'
+import { exchangeRequestsFromApi, handoffsFromApi } from '../api/adapt.ts'
+import { api } from '../api/client.ts'
+import type { ExchangeDraft } from '../data/exchanges.ts'
+import { useActivityFeed } from './activityFeedStore.ts'
 import { HandoffContext } from './handoffStore.ts'
 
-/**
- * Seeded Hand Off requests for the walkthrough.
- * Refresh reloads this known set (in-memory only — no persistence).
- */
-function createSeededRequests(): ExchangeRequest[] {
-  return [
-  {
-    id: 'exchange-seed-notebooks',
-    kind: 'need',
-    item: 'Notebooks',
-    quantity: 20,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Saturday morning',
-    status: 'Matched',
-    fulfilled: 20,
-  },
-  {
-    id: 'exchange-seed-ladder',
-    kind: 'need',
-    item: 'Ladder',
-    quantity: 1,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Saturday',
-    status: 'Matched',
-    fulfilled: 1,
-  },
-  {
-    id: 'exchange-seed-cooler',
-    kind: 'offer',
-    item: 'Cooler',
-    quantity: 1,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Sunday afternoon',
-    status: 'Matched',
-    fulfilled: 1,
-  },
-  ]
-}
-
-function createSeededHandoffs(): HandoffRecord[] {
-  return [
-  {
-    id: 'handoff-seed-notebooks',
-    requestId: 'exchange-seed-notebooks',
-    kind: 'need',
-    item: 'Notebooks',
-    quantity: 20,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Saturday morning',
-    status: 'Confirmed',
-    parts: [
-      {
-        listingId: 'offer-priya-notebooks',
-        neighborName: 'Priya Shah',
-        initials: 'PS',
-        quantity: 12,
-        location: '22 Willow Court',
-        distance: 'About 80 yards',
-        windowLabel: 'Saturday, 10 am–12 pm',
-      },
-      {
-        listingId: 'offer-jordan-notebooks',
-        neighborName: 'Jordan Hale',
-        initials: 'JH',
-        quantity: 8,
-        location: '8 Birch Lane',
-        distance: 'About 2 blocks',
-        windowLabel: 'Saturday, 2–4 pm',
-      },
-    ],
-  },
-  {
-    id: 'handoff-seed-ladder',
-    requestId: 'exchange-seed-ladder',
-    kind: 'need',
-    item: 'Ladder',
-    quantity: 1,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Saturday',
-    status: 'Pending confirmation',
-    parts: [
-      {
-        listingId: 'offer-elena-ladder',
-        neighborName: 'Elena Voss',
-        initials: 'EV',
-        quantity: 1,
-        location: '5 Cedar Path',
-        distance: 'About 3 blocks',
-        windowLabel: 'Saturday, 9–11 am',
-      },
-    ],
-  },
-  {
-    id: 'handoff-seed-cooler',
-    requestId: 'exchange-seed-cooler',
-    kind: 'offer',
-    item: 'Cooler',
-    quantity: 1,
-    pickupArea: '14 Willow Court',
-    windowLabel: 'Sunday afternoon',
-    status: 'Received',
-    parts: [
-      {
-        listingId: 'need-maya-cooler',
-        neighborName: 'Maya Chen',
-        initials: 'MC',
-        quantity: 1,
-        location: '18 Oak Street',
-        distance: 'About 4 blocks',
-        windowLabel: 'Sunday, 1–3 pm',
-      },
-    ],
-  },
-  ]
-}
-
+/** Hand Off needs, offers, and handoffs, read from the API activity poll. */
 export function HandoffsProvider({ children }: { children: ReactNode }) {
-  const [requests, setRequests] = useState<ExchangeRequest[]>(createSeededRequests)
-  const [handoffs, setHandoffs] = useState<HandoffRecord[]>(createSeededHandoffs)
+  const { activity, directory, refresh } = useActivityFeed()
 
-  const postExchange = useCallback((draft: ExchangeDraft) => {
-    const request: ExchangeRequest = {
-      id: crypto.randomUUID(),
-      kind: draft.kind,
-      item: draft.item,
-      quantity: draft.quantity,
-      pickupArea: draft.pickupArea,
-      windowLabel: draft.windowLabel,
-      status: 'Open',
-      fulfilled: 0,
-    }
-    setRequests((current) => [...current, request])
-    return request
-  }, [])
-
-  const updateExchange = useCallback((id: string, draft: ExchangeDraft) => {
-    setRequests((current) =>
-      current.map((item) =>
-        item.id === id && item.fulfilled === 0
-          ? {
-              ...item,
-              kind: draft.kind,
-              item: draft.item,
-              quantity: draft.quantity,
-              pickupArea: draft.pickupArea,
-              windowLabel: draft.windowLabel,
-            }
-          : item,
-      ),
-    )
-  }, [])
-
-  const arrangeHandoff = useCallback(
-    (requestId: string, parts: readonly HandoffPart[]) => {
-      const request = requests.find((item) => item.id === requestId)
-      if (!request || parts.length === 0) return null
-
-      const remaining = request.quantity - request.fulfilled
-      if (remaining <= 0) return null
-
-      const existing = handoffs.find((item) => item.requestId === requestId) ?? null
-      // Append only while the first handoff is still waiting; later statuses are locked in.
-      if (existing && existing.status !== 'Pending confirmation') return null
-
-      const usedIds = new Set(existing?.parts.map((part) => part.listingId) ?? [])
-      let left = remaining
-      const capped: HandoffPart[] = []
-      for (const part of parts) {
-        if (left <= 0 || usedIds.has(part.listingId) || part.quantity <= 0) continue
-        const quantity = Math.min(part.quantity, left)
-        capped.push({ ...part, quantity })
-        usedIds.add(part.listingId)
-        left -= quantity
-      }
-      if (capped.length === 0) return null
-
-      const added = capped.reduce((sum, part) => sum + part.quantity, 0)
-      const nextFulfilled = request.fulfilled + added
-      const nextStatus = nextFulfilled >= request.quantity ? 'Matched' : 'Open'
-
-      setRequests((current) =>
-        current.map((item) =>
-          item.id === requestId
-            ? { ...item, fulfilled: nextFulfilled, status: nextStatus }
-            : item,
-        ),
-      )
-
-      if (existing) {
-        const updated: HandoffRecord = {
-          ...existing,
-          quantity: existing.quantity + added,
-          parts: [...existing.parts, ...capped],
-        }
-        setHandoffs((current) =>
-          current.map((item) => (item.id === existing.id ? updated : item)),
-        )
-        return updated
-      }
-
-      const record: HandoffRecord = {
-        id: crypto.randomUUID(),
-        requestId,
-        kind: request.kind,
-        item: request.item,
-        quantity: added,
-        pickupArea: request.pickupArea,
-        windowLabel: request.windowLabel,
-        parts: capped,
-        status: 'Pending confirmation',
-      }
-      setHandoffs((current) =>
-        current.some((item) => item.requestId === requestId) ? current : [...current, record],
-      )
-      return record
-    },
-    [requests, handoffs],
+  const requests = useMemo(
+    () => (activity && directory ? exchangeRequestsFromApi(activity, directory) : []),
+    [activity, directory],
+  )
+  const handoffs = useMemo(
+    () => (activity && directory ? handoffsFromApi(activity, directory) : []),
+    [activity, directory],
   )
 
-  const advanceHandoff = useCallback((handoffId: string) => {
-    setHandoffs((current) =>
-      current.map((record) => {
-        if (record.id !== handoffId) return record
-        const next = nextHandoffStatus(record.status)
-        return next ? { ...record, status: next } : record
-      }),
-    )
-  }, [])
+  const confirmExchange = useCallback(
+    async (draft: ExchangeDraft, pendingRequestId: string | null) => {
+      try {
+        let requestId = pendingRequestId
+        if (!requestId) {
+          const drafted = await api.chat(sentenceFor(draft))
+          if (drafted.type !== 'confirmation') {
+            return {
+              requestId: null,
+              message: drafted.type === 'no_match' ? drafted.message : 'Relay could not read that item.',
+            }
+          }
+          requestId = drafted.request_id
+        }
+        const result = await api.confirmRequest(requestId)
+        await refresh()
+        return { requestId, message: result.type === 'no_match' ? result.message : null }
+      } catch (caught) {
+        return {
+          requestId: null,
+          message: caught instanceof Error ? caught.message : 'The Relay API is not answering.',
+        }
+      }
+    },
+    [refresh],
+  )
+
+  const advanceHandoff = useCallback(
+    async (handoffId: string) => {
+      const handoff = activity?.handoffs.find((item) => item.id === handoffId)
+      if (!handoff) return
+      try {
+        if (handoff.status === 'proposed') {
+          // Demo stand-in: confirm for the recipient and every donor who has not yet.
+          const parties = new Set<string>()
+          if (!handoff.recipient_confirmed) parties.add(handoff.recipient_id)
+          for (const row of handoff.allocations) if (!row.donor_confirmed) parties.add(row.resident_id)
+          for (const party of parties) await api.confirmHandoff(handoff.id, party)
+        } else if (handoff.status === 'confirmed') {
+          await api.receiveHandoff(handoff.id)
+        }
+      } catch {
+        // Another tab may have moved it first; the refresh below shows the real status.
+      }
+      await refresh()
+    },
+    [activity, refresh],
+  )
 
   const value = useMemo(
-    () => ({
-      requests,
-      handoffs,
-      postExchange,
-      updateExchange,
-      arrangeHandoff,
-      advanceHandoff,
-    }),
-    [requests, handoffs, postExchange, updateExchange, arrangeHandoff, advanceHandoff],
+    () => ({ requests, handoffs, confirmExchange, advanceHandoff }),
+    [requests, handoffs, confirmExchange, advanceHandoff],
   )
 
   return <HandoffContext.Provider value={value}>{children}</HandoffContext.Provider>
+}
+
+function sentenceFor(draft: ExchangeDraft) {
+  const what = `${draft.quantity} ${draft.item.toLowerCase()}`
+  const when = draft.windowLabel ? ` ${draft.windowLabel}` : ''
+  const where = draft.pickupArea ? ` at ${draft.pickupArea}` : ''
+  return draft.kind === 'need' ? `I need ${what}${when}${where}` : `I have ${what} to give${when}${where}`
 }

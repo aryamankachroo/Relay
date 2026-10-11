@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Hammer, HandHelping, Notebook, Send, type LucideIcon } from 'lucide-react'
-import { replyToMessage } from '../chat/reply.ts'
+import { api, apiBase } from '../api/client.ts'
+import { replyFromApi } from '../chat/reply.ts'
 import {
   createTextMessage,
   type ChatCard,
@@ -11,6 +12,7 @@ import { RelayMark } from '../components/RelayMark.tsx'
 import { ExchangeCard } from '../components/ExchangeCard.tsx'
 import { ToolChecklistCard } from '../components/ToolChecklistCard.tsx'
 import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { useActivityFeed } from '../state/activityFeedStore.ts'
 
 const examples: { kicker: string; text: string; icon: LucideIcon; accent: string }[] = [
   {
@@ -38,6 +40,7 @@ const inputMaxHeight = 136
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
+  const { refresh } = useActivityFeed()
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -61,17 +64,30 @@ export function ChatPage() {
     })
   }, [messages])
 
-  function appendExchange(text: string) {
+  async function appendExchange(text: string) {
     const trimmed = text.trim()
     if (!trimmed) return
-    const next = [createTextMessage('user', trimmed), replyToMessage(trimmed)]
-    setMessages((current) => [...current, ...next])
+    const pending = createTextMessage('relay', 'Relay is thinking…', 'pending')
+    setMessages((current) => [...current, createTextMessage('user', trimmed), pending])
+
+    let reply: ChatMessage
+    try {
+      reply = replyFromApi(await api.chat(trimmed), trimmed)
+    } catch {
+      reply = createTextMessage(
+        'relay',
+        `I could not reach the Relay API at ${apiBase}. Check that the backend is running, then send that again.`,
+        'error',
+      )
+    }
+    setMessages((current) => current.map((message) => (message.id === pending.id ? reply : message)))
+    void refresh()
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canSend) return
-    appendExchange(draft)
+    void appendExchange(draft)
     setDraft('')
     inputRef.current?.focus()
   }
@@ -110,7 +126,7 @@ export function ChatPage() {
                       key={text}
                       type="button"
                       className="chat-prompt"
-                      onClick={() => appendExchange(text)}
+                      onClick={() => void appendExchange(text)}
                     >
                       <span className="icon-chip chat-prompt-icon" style={{ backgroundColor: accent }}>
                         <Icon aria-hidden="true" size={20} />
@@ -206,7 +222,11 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 function MessageBody({ content }: { content: MessageContent }) {
   switch (content.type) {
     case 'text':
-      return <p className="chat-text">{content.text}</p>
+      return (
+        <p className="chat-text" role={content.tone === 'error' ? 'alert' : undefined}>
+          {content.text}
+        </p>
+      )
     case 'card':
       return <ChatCardSlot card={content.card} />
     default: {
@@ -219,9 +239,17 @@ function MessageBody({ content }: { content: MessageContent }) {
 function ChatCardSlot({ card }: { card: ChatCard }) {
   switch (card.type) {
     case 'tool-checklist':
-      return <ToolChecklistCard title={card.title} summary={card.summary} />
+      return (
+        <ToolChecklistCard
+          title={card.title}
+          summary={card.summary}
+          projectId={card.projectId}
+          window={card.window}
+          tools={card.tools}
+        />
+      )
     case 'exchange':
-      return <ExchangeCard draft={card.draft} />
+      return <ExchangeCard draft={card.draft} requestId={card.requestId} />
   }
 }
 

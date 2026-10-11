@@ -1,14 +1,6 @@
 from app.catalog import BOOKSHELF_TOOLS
 
 
-def _resident(client, resident_id, name):
-    response = client.post(
-        "/api/residents",
-        json={"id": resident_id, "name": name, "street": "Willow Court"},
-    )
-    assert response.status_code == 201
-
-
 def _say(client, resident_id, message):
     response = client.post("/api/chat", json={"resident_id": resident_id, "message": message})
     assert response.status_code == 200, response.text
@@ -30,9 +22,21 @@ def test_bookshelf_tool_list(client):
     assert card["window"]["start"]
 
 
+def test_seed_adds_the_snowflake_cast(client):
+    residents = {row["id"]: row for row in client.get("/api/residents").json()}
+    assert {"avery", "jordan", "sam", "riley", "noor"} <= residents.keys()
+    assert residents["jordan"]["name"] == "Jordan Lee"
+    assert residents["jordan"]["initials"] == "JL"
+    assert (residents["sam"]["x"], residents["sam"]["y"]) == (3, 3)
+    assert (residents["noor"]["x"], residents["noor"]["y"]) == (40, 0)
+    duplicate = client.post(
+        "/api/residents",
+        json={"id": "riley", "name": "Riley Park", "street": "21 Willow Court"},
+    )
+    assert duplicate.status_code == 409
+
+
 def test_notebook_partial_match_and_garden(client):
-    _resident(client, "jordan", "Jordan Lee")
-    _resident(client, "sam", "Sam Ortiz")
     assert _say(client, "jordan", "I have 12 notebooks to give away")["type"] == "confirmation"
     assert _say(client, "jordan", "yes")["type"] == "no_match"
     assert _say(client, "sam", "I have 8 notebooks")["type"] == "confirmation"
@@ -40,6 +44,7 @@ def test_notebook_partial_match_and_garden(client):
     assert _say(client, "avery", "I need 20 notebooks for a school supply drive")["type"] == "confirmation"
     match = _say(client, "avery", "yes")
     assert match["type"] == "match"
+    assert match["recipient_id"] == "avery"
     assert match["complete"] is True
     assert match["filled_quantity"] == 20
     assert sorted(row["quantity"] for row in match["allocations"]) == [8, 12]
@@ -55,6 +60,33 @@ def test_notebook_partial_match_and_garden(client):
     assert received.status_code == 200
     assert received.json()["status"] == "received"
     assert client.get("/api/garden").json()["count"] == 1
+
+
+def test_confirm_publishes_the_named_request_not_the_latest(client):
+    notebooks = _say(client, "avery", "I need 20 notebooks Saturday")
+    ladder = _say(client, "avery", "I have a ladder to lend")
+    assert notebooks["type"] == ladder["type"] == "confirmation"
+
+    published = client.post(
+        f"/api/requests/{notebooks['request_id']}/confirm",
+        json={"resident_id": "avery"},
+    )
+    assert published.status_code == 200
+    assert published.json()["request_id"] == notebooks["request_id"]
+    statuses = {row["id"]: row["status"] for row in client.get("/api/activity").json()["requests"]}
+    assert statuses[notebooks["request_id"]] == "open"
+    assert statuses[ladder["request_id"]] == "pending_confirm"
+
+    again = client.post(
+        f"/api/requests/{notebooks['request_id']}/confirm",
+        json={"resident_id": "avery"},
+    )
+    assert again.status_code == 409
+    stranger = client.post(
+        f"/api/requests/{ladder['request_id']}/confirm",
+        json={"resident_id": "jordan"},
+    )
+    assert stranger.status_code == 404
 
 
 def test_loan_conflict_pickup_and_return(client):
@@ -81,8 +113,6 @@ def test_loan_conflict_pickup_and_return(client):
 
 
 def test_shared_drill_demand_waits_for_inventory(client):
-    _resident(client, "jordan", "Jordan Lee")
-    _resident(client, "sam", "Sam Ortiz")
     for resident_id, day in (
         ("avery", "Saturday"),
         ("jordan", "Sunday"),
