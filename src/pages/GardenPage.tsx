@@ -24,7 +24,7 @@ export function GardenPage() {
     <section className="garden-page" aria-labelledby={headingId}>
       <GlassCard tone="strong" className="garden-hero">
         <div className="garden-hero-badge">
-          <span className="icon-chip" style={{ backgroundColor: 'var(--relay-color-leaf-300)' }}>
+          <span className="icon-chip" style={{ '--chip': 'var(--relay-color-leaf-300)' }}>
             <Flower2 aria-hidden="true" size={22} />
           </span>
           <div className="grid gap-1">

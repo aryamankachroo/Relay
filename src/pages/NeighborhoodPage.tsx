@@ -34,7 +34,7 @@ export function NeighborhoodPage() {
     <section className="hood-page" aria-labelledby={headingId}>
       <GlassCard tone="strong" className="hood-hero">
         <div className="hood-hero-badge">
-          <span className="icon-chip" style={{ backgroundColor: 'var(--relay-color-turquoise-300)' }}>
+          <span className="icon-chip" style={{ '--chip': 'var(--relay-color-turquoise-300)' }}>
             <Map aria-hidden="true" size={22} />
           </span>
           <div className="grid gap-1">

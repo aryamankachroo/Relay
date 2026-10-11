@@ -20,7 +20,7 @@ export function PlaceholderPage({
     <section className="grid max-w-2xl">
       <GlassCard tone="strong" className="grid gap-4">
         <div className="flex items-center gap-4">
-          <div className="icon-chip shrink-0" style={{ backgroundColor: accent }}>
+          <div className="icon-chip shrink-0" style={{ '--chip': accent }}>
             <Icon aria-hidden="true" size={22} />
           </div>
           <div className="grid gap-1">

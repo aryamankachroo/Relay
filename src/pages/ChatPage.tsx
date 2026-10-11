@@ -103,15 +103,7 @@ export function ChatPage() {
       <div className="chat-pond">
         <div className={messages.length === 0 ? 'chat-log chat-log-empty' : 'chat-log'} ref={logRef}>
           <header className="chat-welcome">
-            <div className="chat-welcome-lockup">
-              <div className="chat-relay-badge">
-                <RelayMark className="relay-mark" />
-              </div>
-              <div className="chat-welcome-copy">
-                <p className="eyebrow">Relay</p>
-                <h1>What are we making happen?</h1>
-              </div>
-            </div>
+            <h1>What are we making happen?</h1>
             <p className="chat-intro">
               Relay is how neighbors share a project, a need, or something to give away. A few plain
               sentences are enough to start the next handoff.
