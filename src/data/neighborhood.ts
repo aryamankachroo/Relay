@@ -2,9 +2,11 @@ import { demoResident } from './index.ts'
 import { communityPosts } from './exchanges.ts'
 import {
   demoNeighbors,
+  isItemOnLoan,
   neighborListings,
   type LoanRequest,
   type LoanStatus,
+  type NeighborListing,
 } from './lending.ts'
 import type { InventoryItem } from './bookshelfProject.ts'
 
@@ -14,13 +16,16 @@ export type SceneResident = {
   id: SceneResidentId
   name: string
   initials: string
+  /** Fictional demo profile. Not a geocoded address and not the map pin. */
   street: string
   isYou: boolean
-  /** House anchor in the 800×480 scene viewBox. */
-  x: number
-  y: number
-  roof: string
-  wall: string
+  /**
+   * Placement on the real map backdrop. These points sit on a compact cluster
+   * of residential blocks in Park Slope so the demo reads as one neighborhood.
+   * They are not geocodes of the fictional street names.
+   */
+  longitude: number
+  latitude: number
 }
 
 export type SceneItem = {
@@ -38,7 +43,17 @@ export type ShareLink = {
   active: boolean
 }
 
-/** Avery plus the three seeded lenders — the demo block on Willow Court. */
+/**
+ * Map backdrop for the fictional Willow Court residents.
+ * Park Slope is a real place. The residents are not.
+ */
+export const demoMapBackdrop = {
+  name: 'Park Slope, Brooklyn',
+  minZoom: 14,
+  maxZoom: 18,
+} as const
+
+/** Avery plus the three seeded lenders, placed a few blocks apart. */
 export const sceneResidents: readonly SceneResident[] = [
   {
     id: 'resident-avery',
@@ -46,10 +61,8 @@ export const sceneResidents: readonly SceneResident[] = [
     initials: demoResident.initials,
     street: demoResident.street,
     isYou: true,
-    x: 318,
-    y: 292,
-    roof: '#2ecfbf',
-    wall: '#f4fcff',
+    longitude: -73.980476,
+    latitude: 40.667858,
   },
   {
     id: 'neighbor-priya',
@@ -57,10 +70,8 @@ export const sceneResidents: readonly SceneResident[] = [
     initials: demoNeighbors[0].initials,
     street: demoNeighbors[0].street,
     isYou: false,
-    x: 128,
-    y: 248,
-    roof: '#3eb6ef',
-    wall: '#e5f6ff',
+    longitude: -73.982572,
+    latitude: 40.668433,
   },
   {
     id: 'neighbor-jordan',
@@ -68,10 +79,8 @@ export const sceneResidents: readonly SceneResident[] = [
     initials: demoNeighbors[1].initials,
     street: demoNeighbors[1].street,
     isYou: false,
-    x: 538,
-    y: 238,
-    roof: '#3cbf64',
-    wall: '#f4fcff',
+    longitude: -73.982544,
+    latitude: 40.666716,
   },
   {
     id: 'neighbor-elena',
@@ -79,10 +88,8 @@ export const sceneResidents: readonly SceneResident[] = [
     initials: demoNeighbors[2].initials,
     street: demoNeighbors[2].street,
     isYou: false,
-    x: 668,
-    y: 318,
-    roof: '#0c749f',
-    wall: '#c9fff8',
+    longitude: -73.980326,
+    latitude: 40.666533,
   },
 ]
 
@@ -90,30 +97,58 @@ export function sceneResidentById(id: string) {
   return sceneResidents.find((resident) => resident.id === id)
 }
 
+/** Bounds that frame every demo pin. */
+export function demoResidentBounds(): [[number, number], [number, number]] {
+  let west = Infinity
+  let south = Infinity
+  let east = -Infinity
+  let north = -Infinity
+  for (const resident of sceneResidents) {
+    west = Math.min(west, resident.longitude)
+    east = Math.max(east, resident.longitude)
+    south = Math.min(south, resident.latitude)
+    north = Math.max(north, resident.latitude)
+  }
+  return [
+    [west, south],
+    [east, north],
+  ]
+}
+
+/** A little of the surrounding neighborhood, still short of a city-wide wander. */
+export function demoExploreBounds(): [[number, number], [number, number]] {
+  const [[west, south], [east, north]] = demoResidentBounds()
+  return [
+    [west - 0.012, south - 0.008],
+    [east + 0.012, north + 0.008],
+  ]
+}
+
+function sceneIdForResident(id: string): SceneResidentId | null {
+  if (sceneResidents.some((resident) => resident.id === id)) {
+    return id as SceneResidentId
+  }
+  return null
+}
+
 /**
  * Active and requested loans draw a path between Avery and the other party.
  * Avery may be borrower or lender. Returned loans drop off.
  */
-export function shareLinksFromLoans(
-  loans: readonly LoanRequest[],
-  residentIds: ReadonlySet<string> = new Set(sceneResidents.map((resident) => resident.id)),
-  viewerId = 'avery',
-): ShareLink[] {
-  const known = (id: string) => (residentIds.has(id) ? id : null)
-
+export function shareLinksFromLoans(loans: readonly LoanRequest[]): ShareLink[] {
   return loans.flatMap((loan) => {
     if (loan.status === 'Returned') return []
 
-    const lenderId = known(loan.lenderId)
+    const lenderId = sceneIdForResident(loan.lenderId)
     if (!lenderId) return []
 
-    if (lenderId === viewerId) {
-      const borrowerId = loan.borrowerId ? known(loan.borrowerId) : null
-      if (!borrowerId || borrowerId === viewerId) return []
+    if (lenderId === 'resident-avery') {
+      const borrowerId = loan.borrowerId ? sceneIdForResident(loan.borrowerId) : null
+      if (!borrowerId || borrowerId === 'resident-avery') return []
       return [
         {
           id: loan.id,
-          fromId: viewerId,
+          fromId: 'resident-avery',
           toId: borrowerId,
           itemName: loan.itemName,
           status: loan.status,
@@ -125,7 +160,7 @@ export function shareLinksFromLoans(
     return [
       {
         id: loan.id,
-        fromId: viewerId,
+        fromId: 'resident-avery',
         toId: lenderId,
         itemName: loan.itemName,
         status: loan.status,
@@ -135,31 +170,68 @@ export function shareLinksFromLoans(
   })
 }
 
+export function linksForResident(residentId: string, links: readonly ShareLink[]) {
+  return links.filter((link) => link.fromId === residentId || link.toId === residentId)
+}
+
+function pickupAvailability(listing: NeighborListing) {
+  const open = listing.pickupWindows.filter((window) => window.available)
+  if (open.length === 0) {
+    return listing.pickupWindows.find((window) => window.closedNote)?.closedNote ?? 'No open pickup'
+  }
+  if (open.length === 1) return open[0]?.label ?? 'Open'
+  return `${open[0]?.label ?? 'Open'} · ${open.length - 1} more open`
+}
+
+function lentItemNames(residentId: SceneResidentId, loans: readonly LoanRequest[]) {
+  const names = new Set<string>()
+  for (const loan of loans) {
+    if (loan.lenderId !== residentId || !isItemOnLoan(loan.status)) continue
+    names.add(loan.itemName.trim().toLowerCase())
+  }
+  return names
+}
+
 export function itemsForResident(
   residentId: SceneResidentId,
   inventory: readonly InventoryItem[],
+  loans: readonly LoanRequest[] = [],
 ): SceneItem[] {
+  const committed = lentItemNames(residentId, loans)
+
   if (residentId === 'resident-avery') {
+    const lentIds = new Set(
+      loans.flatMap((loan) =>
+        loan.lenderId === residentId && loan.inventoryItemId && isItemOnLoan(loan.status)
+          ? [loan.inventoryItemId]
+          : [],
+      ),
+    )
     return inventory
-      .filter((item) => item.availableToLend)
-      .slice(0, 4)
+      .filter((item) => item.availableToLend && !lentIds.has(item.id) && !committed.has(item.name.trim().toLowerCase()))
       .map((item) => ({
         id: item.id,
         name: item.name,
-        detail: item.condition,
+        detail: item.quantity > 1 ? `${item.quantity} · ${item.condition} · Ready to lend` : `${item.condition} · Ready to lend`,
       }))
   }
 
   const listings = neighborListings
-    .filter((listing) => listing.residentId === residentId)
+    .filter((listing) => listing.residentId === residentId && !committed.has(listing.itemName.trim().toLowerCase()))
     .map((listing) => ({
       id: listing.id,
       name: listing.itemName,
-      detail: listing.condition,
+      detail: `${listing.condition} · ${pickupAvailability(listing)}`,
     }))
 
   const offers = communityPosts
-    .filter((post) => post.residentId === residentId && post.kind === 'offer' && post.available)
+    .filter(
+      (post) =>
+        post.residentId === residentId &&
+        post.kind === 'offer' &&
+        post.available &&
+        !committed.has(post.itemName.trim().toLowerCase()),
+    )
     .map((post) => ({
       id: post.id,
       name: post.quantity > 1 ? `${post.quantity} ${post.itemName.toLowerCase()}` : post.itemName,
