@@ -85,7 +85,11 @@ function ToolMatchGroup({
         {tool.name}
         {tool.required ? null : <span className="inventory-optional">Optional</span>}
       </h4>
-      {matches.length === 0 ? (
+      {!tool.inCatalog ? (
+        <p className="match-none">
+          {tool.name} is not in the Relay catalog yet, so no neighbor can lend it.
+        </p>
+      ) : matches.length === 0 ? (
         <p className="match-none">No nearby match for {tool.name}. Nobody listed one to lend.</p>
       ) : (
         <ul className="match-list">

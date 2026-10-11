@@ -40,6 +40,7 @@ export type Directory = {
 
 export type ProjectTool = ChecklistTool & {
   catalogItemId: string
+  inCatalog: boolean
   haveAlready: boolean
   neighbors: readonly ApiNeighbor[]
 }
@@ -88,7 +89,8 @@ export function projectTools(
     name: tool.name,
     required: !tool.optional,
     selected: previous.find((item) => item.id === tool.id)?.selected ?? true,
-    catalogItemId: tool.catalog_item_id,
+    catalogItemId: tool.catalog_item_id ?? '',
+    inCatalog: tool.catalog_item_id !== null,
     haveAlready: tool.have_already,
     neighbors: tool.neighbors,
   }))

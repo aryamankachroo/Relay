@@ -35,6 +35,7 @@ class ProjectTool(SQLModel, table=True):
     id: str = Field(primary_key=True)
     project_id: str
     catalog_item_id: str
+    name: str | None = None
     position: int = 0
     optional: bool = False
     have_already: bool = False

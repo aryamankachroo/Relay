@@ -46,7 +46,7 @@ def handle_chat(session: Session, resident_id: str, message: str) -> dict:
     if extraction.intent == "confirm_no":
         return apply_no(session, resident_id)
     if extraction.intent == "project":
-        if not extraction.item_ids:
+        if not extraction.item_ids and not extraction.extra_names:
             return {
                 "type": "no_match",
                 "message": "Name the project or the tools, and the list can be edited.",
@@ -61,7 +61,10 @@ def handle_chat(session: Session, resident_id: str, message: str) -> dict:
         return _draft_request(session, resident, message, extraction, catalog)
     return {
         "type": "no_match",
-        "message": "Say what you are building, what you need, or what you can give.",
+        "message": (
+            "Relay could not read that one. Try naming the project, like "
+            "'I'm fixing a flat tire this weekend', or a tool you need."
+        ),
     }
 
 
@@ -508,6 +511,16 @@ def _create_project(session, resident, message, extraction, catalog) -> dict:
                 have_already=item_id in owned,
             )
         )
+    for offset, name in enumerate(extraction.extra_names):
+        session.add(
+            ProjectTool(
+                id=uuid4().hex,
+                project_id=project.id,
+                catalog_item_id="",
+                name=name,
+                position=len(extraction.item_ids) + offset,
+            )
+        )
     session.commit()
     session.refresh(project)
     snowflake = snowflake_store.configured()
@@ -865,8 +878,8 @@ def _project_dict(session: Session, project: Project) -> dict:
         tool_rows.append(
             {
                 "id": tool.id,
-                "catalog_item_id": tool.catalog_item_id,
-                "name": item.name if item else tool.catalog_item_id,
+                "catalog_item_id": tool.catalog_item_id or None,
+                "name": item.name if item else (tool.name or tool.catalog_item_id),
                 "optional": tool.optional,
                 "have_already": tool.have_already,
                 "neighbors": neighbors,

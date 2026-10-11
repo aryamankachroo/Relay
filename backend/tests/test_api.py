@@ -1,4 +1,10 @@
+from sqlmodel import select
+
 from app.catalog import BOOKSHELF_TOOLS
+from app.clock import now as utcnow
+from app.db import session_scope
+from app.extract import Extraction, _extraction_from_payload
+from app.models import CatalogItem
 
 
 def _say(client, resident_id, message):
@@ -20,6 +26,47 @@ def test_bookshelf_tool_list(client):
     assert [tool["catalog_item_id"] for tool in card["tools"]] == list(BOOKSHELF_TOOLS)
     assert all(tool["have_already"] is False and tool["neighbors"] == [] for tool in card["tools"])
     assert card["window"]["start"]
+
+
+def _catalog():
+    with session_scope() as session:
+        return list(session.exec(select(CatalogItem)))
+
+
+def test_project_payload_keeps_tools_outside_the_catalog(client):
+    payload = {
+        "intent": "project",
+        "items": [{"name": "Socket set"}, {"name": "Drill"}, {"name": "socket  set"}, {"name": "Car jack"}],
+    }
+    extraction = _extraction_from_payload(payload, "building a car", _catalog(), utcnow())
+    assert extraction.intent == "project"
+    assert extraction.item_ids == ["drill"]
+    assert extraction.extra_names == ["Socket set", "Car jack"]
+
+
+def test_need_payload_ignores_tools_outside_the_catalog(client):
+    payload = {"intent": "need", "items": [{"name": "Socket set"}]}
+    assert _extraction_from_payload(payload, "I need a socket set", _catalog(), utcnow()) is None
+
+
+def test_fallback_reads_fixing_as_a_project(client):
+    card = _say(client, "avery", "im fixing a flat tyre")
+    assert card["type"] == "no_match"
+    assert card["message"] == "Name the project or the tools, and the list can be edited."
+
+
+def test_project_with_only_new_tools_makes_a_tool_list(client, monkeypatch):
+    def fake_extract(_message, _catalog_rows):
+        return Extraction("project", [], 1, None, None, None, ["Socket set", "Car jack"])
+
+    monkeypatch.setattr("app.logic.extract_message", fake_extract)
+    card = _say(client, "avery", "i am building a car this weekend")
+    assert card["type"] == "tool_list"
+    assert [(tool["catalog_item_id"], tool["name"]) for tool in card["tools"]] == [
+        (None, "Socket set"),
+        (None, "Car jack"),
+    ]
+    assert all(tool["neighbors"] == [] for tool in card["tools"])
 
 
 def test_seed_adds_the_snowflake_cast(client):

@@ -35,7 +35,8 @@ export type ApiNeighbor = {
 
 export type ApiProjectTool = {
   id: string
-  catalog_item_id: string
+  /** Null for a tool Gemini suggested that is not in the catalog. */
+  catalog_item_id: string | null
   name: string
   optional: boolean
   have_already: boolean

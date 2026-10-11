@@ -1,6 +1,7 @@
 import json
+import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from app.clock import aware, now as utcnow
@@ -9,6 +10,11 @@ from app.catalog import BOOKSHELF_TOOLS, is_bookshelf, match_catalog, mentioned_
 from app.config import gemini_api_key, gemini_model
 from app.models import CatalogItem
 
+log = logging.getLogger(__name__)
+
+GEMINI_ATTEMPTS = 2
+MAX_PROJECT_TOOLS = 8
+MAX_TOOL_NAME = 40
 CONFIRM_YES = {"yes", "y", "confirm", "ok", "okay", "accept", "yep", "yeah"}
 CONFIRM_NO = {"no", "n", "nope", "decline", "cancel"}
 WEEKDAYS = {
@@ -30,6 +36,7 @@ class Extraction:
     window_start: datetime | None
     window_end: datetime | None
     area: str | None
+    extra_names: list[str] = field(default_factory=list)
 
 
 def extract_message(text: str, catalog: list[CatalogItem], now: datetime | None = None) -> Extraction:
@@ -59,7 +66,8 @@ def _fallback(text: str, catalog: list[CatalogItem], now: datetime) -> Extractio
         if len(mentioned) > 1:
             return Extraction("project", mentioned, 1, window[0], window[1], area)
         return Extraction("need", mentioned[:1], quantity, window[0], window[1], area)
-    if bookshelf or re.search(r"\b(building|build|making|project)\b", text.lower()):
+    project_words = r"\b(building|build|making|project|fixing|fix|repairing|repair|replacing|replace|installing|install)\b"
+    if bookshelf or re.search(project_words, text.lower()):
         item_ids = list(BOOKSHELF_TOOLS) if bookshelf else mentioned
         return Extraction("project", item_ids, 1, window[0], window[1], area)
     if mentioned:
@@ -75,7 +83,11 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
     prompt = (
         "Turn this neighborhood-sharing message into JSON only. "
         "intent is project, need, or offer. "
-        f"Map item names only from this catalog: {names}. "
+        f"The catalog is: {names}. "
+        "For a need or offer, name only items from the catalog. "
+        f"For a project, list the tools the job needs, at most {MAX_PROJECT_TOOLS}: "
+        "use the exact catalog name when the tool is in the catalog, "
+        "otherwise a short plain tool name. "
         "Use null for unknown window or area. quantity is a positive integer.\n"
         '{"intent":"need","items":[{"name":"Notebooks","quantity":20,"optional":false}],'
         '"window_start":null,"window_end":null,"area":null}\n'
@@ -85,29 +97,56 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
         from google import genai
 
         client = genai.Client(api_key=key)
-        response = client.models.generate_content(model=gemini_model(), contents=prompt)
+    except Exception as exc:
+        log.warning("Gemini client failed: %s: %s", type(exc).__name__, exc)
+        return None
+    for attempt in range(1, GEMINI_ATTEMPTS + 1):
+        try:
+            response = client.models.generate_content(
+                model=gemini_model(),
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
+            )
+        except Exception as exc:
+            log.warning("Gemini attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
+            continue
         payload = _parse_json(response.text or "")
-    except Exception:
-        return None
-    if not isinstance(payload, dict):
-        return None
+        if isinstance(payload, dict):
+            return _extraction_from_payload(payload, text, catalog, now)
+        log.warning("Gemini attempt %d gave an unparseable reply: %.200r", attempt, response.text)
+    return None
+
+
+def _extraction_from_payload(
+    payload: dict, text: str, catalog: list[CatalogItem], now: datetime
+) -> Extraction | None:
     intent = payload.get("intent")
     if intent not in {"project", "need", "offer"}:
         return None
     item_ids: list[str] = []
+    extra_names: list[str] = []
     quantity = 1
     for entry in payload.get("items") or []:
         if not isinstance(entry, dict):
             continue
-        match = match_catalog(str(entry.get("name") or ""), catalog)
-        if match is None or match.id in item_ids:
+        name = " ".join(str(entry.get("name") or "").split())[:MAX_TOOL_NAME]
+        match = match_catalog(name, catalog)
+        if match is None:
+            seen = {extra.lower() for extra in extra_names}
+            if intent == "project" and name and name.lower() not in seen:
+                extra_names.append(name)
+            continue
+        if match.id in item_ids:
             continue
         item_ids.append(match.id)
         try:
             quantity = max(1, int(entry.get("quantity") or 1))
         except (TypeError, ValueError):
             quantity = 1
-    if not item_ids:
+    if intent == "project":
+        room = max(0, MAX_PROJECT_TOOLS - len(item_ids))
+        extra_names = extra_names[:room]
+    if not item_ids and not extra_names:
         return None
     start = aware(_parse_optional_dt(payload.get("window_start")))
     end = aware(_parse_optional_dt(payload.get("window_end")))
@@ -118,7 +157,15 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
         area = _area(text)
     if intent != "project":
         item_ids = item_ids[:1]
-    return Extraction(intent, item_ids, quantity if intent != "project" else 1, start, end, area)
+    return Extraction(
+        intent,
+        item_ids,
+        quantity if intent != "project" else 1,
+        start,
+        end,
+        area,
+        extra_names,
+    )
 
 
 def _parse_json(text: str) -> dict | None:
