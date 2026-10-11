@@ -4,6 +4,7 @@ export default [
   route('sign-in/*', 'routes/sign-in.tsx'),
   route('signup/*', 'routes/sign-up.tsx'),
   route('sign-up/*', 'routes/sign-up.tsx', { id: 'sign-up-alias' }),
+  route('sso-callback', 'routes/sso-callback.tsx'),
   layout('routes/neighborhood-layout.tsx', [
     index('routes/ChatPage.tsx'),
     route('my-stuff', 'routes/MyStuffPage.tsx'),

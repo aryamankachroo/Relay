@@ -4656,6 +4656,19 @@
 
 .relay-auth-form { margin-top: 1.5rem; }
 .relay-auth-form .relay-clerk-root, .relay-auth-form .relay-clerk-card { width: 100%; max-width: 100%; }
+.relay-native-auth .cl-socialButtonsRoot,
+.relay-native-auth .cl-socialButtons,
+.relay-native-auth .cl-dividerRow { display: none !important; }
+.relay-google {
+  width: 100%;
+  margin: 0 0 12px;
+  border: 1px solid #d7e3ea;
+  border-radius: 12px;
+  background: #fff;
+  color: #16324f;
+  font: 700 15px/1.2 "Nunito", system-ui, sans-serif;
+  padding: 12px 16px;
+}
 .relay-auth-form .relay-clerk-card { box-shadow: none; border: 0; background: transparent; }
 .relay-auth-form .relay-clerk-card-body { padding: 0; background: transparent; box-shadow: none; }
 .relay-account { display: flex; align-items: center; gap: 0.8rem; margin-top: 1.5rem; font-weight: 700; }

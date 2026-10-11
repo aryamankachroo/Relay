@@ -20,4 +20,8 @@ export default defineConfig({
   optimizeDeps: {
     include: ['@rive-app/react-webgl2', 'mapbox-gl'],
   },
+  server: {
+    host: true,
+    port: 5173,
+  },
 })

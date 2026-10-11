@@ -5,12 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "react-router dev",
+    "dev:lan": "react-router dev --host",
     "build": "react-router typegen && tsc -b && react-router build",
     "lint": "eslint .",
     "preview": "react-router-serve ./build/server/index.js",
-    "start": "react-router-serve ./build/server/index.js"
+    "start": "react-router-serve ./build/server/index.js",
+    "ios": "npm run build && cap sync ios && cap open ios"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@clerk/react-router": "^3.6.33",
     "@react-router/node": "^7.18.4",
     "@react-router/serve": "^7.18.4",

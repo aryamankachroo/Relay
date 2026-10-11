@@ -1,13 +1,12 @@
 import type { ReactNode } from 'react'
 import { ClerkProvider } from '@clerk/react-router'
-import { clerkMiddleware, rootAuthLoader } from '@clerk/react-router/server'
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router'
 import type { Route } from './+types/root'
 import App from '../src/App.tsx'
+import { GoogleReturn } from '../src/auth/googleSignIn.tsx'
 import stylesheet from '../src/styles/index.css?url'
 
-export const middleware: Route.MiddlewareFunction[] = [clerkMiddleware()]
-export const loader = (args: Route.LoaderArgs) => rootAuthLoader(args)
+const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 export const links: Route.LinksFunction = () => [
   { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
@@ -22,8 +21,10 @@ export function Layout({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#3eb6ef" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <title>Relay</title>
         <Meta />
         <Links />
@@ -37,9 +38,10 @@ export function Layout({ children }: { children: ReactNode }) {
   )
 }
 
-export default function Root({ loaderData }: Route.ComponentProps) {
+export default function Root() {
   return (
-    <ClerkProvider loaderData={loaderData} signInUrl="/sign-in" signUpUrl="/signup" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/">
+    <ClerkProvider publishableKey={clerkPublishableKey} signInUrl="/sign-in" signUpUrl="/signup" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/">
+      <GoogleReturn />
       <App><Outlet /></App>
     </ClerkProvider>
   )
