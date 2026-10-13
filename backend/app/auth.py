@@ -20,12 +20,12 @@ def current_actor(request: Request) -> str | None:
     """The signed-in Clerk user, or None when tests turn verification off."""
     if auth_disabled():
         return None
-    if not clerk_secret_key():
-        raise HTTPException(status_code=503, detail="Clerk is not configured on the API.")
     header = request.headers.get("authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(status_code=401, detail="Sign in again so Relay can verify this request.")
+    if not clerk_secret_key() or not clerk_issuer():
+        raise HTTPException(status_code=503, detail="Clerk is not configured on the API.")
     return _subject(token.strip())
 
 
@@ -46,9 +46,16 @@ def _subject(token: str) -> str:
         if match is None:
             raise HTTPException(status_code=401, detail="Sign in again so Relay can verify this request.")
         key = jwt.PyJWK.from_dict(match).key
-        options = {"verify_aud": False, "verify_iss": bool(clerk_issuer())}
-        decode_args = {"issuer": clerk_issuer()} if clerk_issuer() else {}
-        payload = jwt.decode(token, key, algorithms=["RS256"], options=options, **decode_args)
+        options = {"verify_aud": False, "verify_iss": True, "require": ["exp", "iat", "sub", "iss"]}
+        if not clerk_issuer():
+            raise HTTPException(status_code=503, detail="Clerk issuer is not configured on the API.")
+        payload = jwt.decode(
+            token,
+            key,
+            algorithms=["RS256"],
+            issuer=clerk_issuer(),
+            options=options,
+        )
     except HTTPException:
         raise
     except Exception as exc:

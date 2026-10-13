@@ -112,6 +112,7 @@ class ShelfItem(SQLModel, table=True):
     condition: str = ""
     notes: str = ""
     available_to_lend: bool = True
+    catalog_item_id: str | None = None
 
 
 class StockRow(SQLModel, table=True):

@@ -320,6 +320,15 @@ def upsert_inventory(row: dict) -> None:
         raise SnowflakeError(str(exc)) from exc
 
 
+def fetch_inventory_row(inventory_id: str) -> dict | None:
+    if not configured():
+        return None
+    for row in fetch_inventory().get("items") or []:
+        if str(row.get("inventory_id") or "") == inventory_id:
+            return row
+    return None
+
+
 def delete_inventory_by_id(inventory_id: str) -> None:
     if not configured():
         return
@@ -342,7 +351,7 @@ def _inventory_params(row: dict) -> tuple:
         row.get("x") or 0,
         row.get("y") or 0,
         row["catalog_item"],
-        int(row.get("quantity") or 1),
+        int(row["quantity"]) if row.get("quantity") is not None else 1,
         bool(row.get("willing_to_lend", True)),
         row.get("condition_note") or "",
         json.dumps(windows),
@@ -359,7 +368,7 @@ def _inventory_update_params(row: dict) -> tuple:
         row.get("x") or 0,
         row.get("y") or 0,
         row["catalog_item"],
-        int(row.get("quantity") or 1),
+        int(row["quantity"]) if row.get("quantity") is not None else 1,
         bool(row.get("willing_to_lend")),
         row.get("condition_note") or "",
         row.get("category") or "",

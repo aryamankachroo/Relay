@@ -134,17 +134,17 @@ CATALOG = (
 
 # Same ids and grid points as snowflake/create_residents.sh and the INVENTORY seed.
 NEIGHBORS = (
-    {"id": "jordan", "name": "Jordan Lee", "short_name": "Jordan", "street": "16 Willow Court", "x": 2, "y": 1},
-    {"id": "sam", "name": "Sam Ortiz", "short_name": "Sam", "street": "18 Willow Court", "x": 3, "y": 3},
-    {"id": "riley", "name": "Riley Park", "short_name": "Riley", "street": "21 Willow Court", "x": 5, "y": 2},
-    {"id": "noor", "name": "Noor Haddad", "short_name": "Noor", "street": "9 Far Road", "x": 40, "y": 0},
-    {"id": "maya", "name": "Maya Chen", "short_name": "Maya", "street": "12 Willow Court", "x": 1, "y": 4},
-    {"id": "chris", "name": "Chris Nguyen", "short_name": "Chris", "street": "22 Willow Court", "x": 4, "y": 1},
-    {"id": "priya", "name": "Priya Shah", "short_name": "Priya", "street": "9 Willow Court", "x": 6, "y": 4},
-    {"id": "elena", "name": "Elena Brooks", "short_name": "Elena", "street": "25 Willow Court", "x": 8, "y": 2},
-    {"id": "luis", "name": "Luis Alvarez", "short_name": "Luis", "street": "11 Willow Court", "x": 7, "y": 3},
-    {"id": "nia", "name": "Nia Patel", "short_name": "Nia", "street": "4 Oak Lane", "x": 2, "y": 5},
-    {"id": "owen", "name": "Owen Blake", "short_name": "Owen", "street": "7 Willow Court", "x": 1, "y": 2},
+    {"id": "jordan", "name": "Jordan Lee", "short_name": "Jordan", "street": "16 Willow Court", "x": 2, "y": 1, "city": "Charlotte"},
+    {"id": "sam", "name": "Sam Ortiz", "short_name": "Sam", "street": "18 Willow Court", "x": 3, "y": 3, "city": "Charlotte"},
+    {"id": "riley", "name": "Riley Park", "short_name": "Riley", "street": "21 Willow Court", "x": 5, "y": 2, "city": "Charlotte"},
+    {"id": "noor", "name": "Noor Haddad", "short_name": "Noor", "street": "9 Far Road", "x": 40, "y": 0, "city": "Charlotte"},
+    {"id": "maya", "name": "Maya Chen", "short_name": "Maya", "street": "12 Willow Court", "x": 1, "y": 4, "city": "Charlotte"},
+    {"id": "chris", "name": "Chris Nguyen", "short_name": "Chris", "street": "22 Willow Court", "x": 4, "y": 1, "city": "Charlotte"},
+    {"id": "priya", "name": "Priya Shah", "short_name": "Priya", "street": "9 Willow Court", "x": 6, "y": 4, "city": "Charlotte"},
+    {"id": "elena", "name": "Elena Brooks", "short_name": "Elena", "street": "25 Willow Court", "x": 8, "y": 2, "city": "Charlotte"},
+    {"id": "luis", "name": "Luis Alvarez", "short_name": "Luis", "street": "11 Willow Court", "x": 7, "y": 3, "city": "Charlotte"},
+    {"id": "nia", "name": "Nia Patel", "short_name": "Nia", "street": "4 Oak Lane", "x": 2, "y": 5, "city": "Charlotte"},
+    {"id": "owen", "name": "Owen Blake", "short_name": "Owen", "street": "7 Willow Court", "x": 1, "y": 2, "city": "Charlotte"},
 )
 
 # Extra shared inventory. Nobody new owns a drill, so the shared-purchase demo stays intact.
@@ -177,6 +177,7 @@ def seed(session: Session) -> None:
                 initials="AM",
                 x=0,
                 y=0,
+                city="Charlotte",
             )
         )
     for row in NEIGHBORS:

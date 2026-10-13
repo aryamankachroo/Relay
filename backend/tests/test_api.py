@@ -27,7 +27,7 @@ def test_bookshelf_tool_list(client):
     assert card["type"] == "tool_list"
     assert card["snowflake"] == "not_configured"
     assert [tool["catalog_item_id"] for tool in card["tools"]] == list(BOOKSHELF_TOOLS)
-    assert all(tool["have_already"] is False and tool["neighbors"] == [] for tool in card["tools"])
+    assert all(tool["have_already"] is False and isinstance(tool["neighbors"], list) for tool in card["tools"])
     assert card["window"]["start"]
 
 
@@ -146,7 +146,7 @@ def test_loan_conflict_pickup_and_return(client):
             "resident_id": "jordan",
             "name": "Drill",
             "category": "Tools",
-            "quantity": 2,
+            "quantity": 1,
             "condition": "Good",
             "notes": "",
             "available_to_lend": True,
@@ -522,7 +522,7 @@ def test_two_bookings_cannot_exceed_the_shelf(client):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         codes = list(pool.map(book, ("avery", "sam")))
-    assert sorted(codes) == [201, 400]
+    assert sorted(codes) == [201, 409]
 
 
 def test_two_accounts_keep_a_partial_handoff(client):
@@ -550,4 +550,190 @@ def test_two_accounts_keep_a_partial_handoff(client):
     statuses = {row["id"]: row for row in client.get("/api/activity").json()["requests"]}
     assert statuses[need["request_id"]]["status"] == "open"
     assert statuses[need["request_id"]]["quantity"] == 15
+
+    second = _say(client, "sam", "I have 10 wagons to give away Saturday")
+    assert second["type"] == "confirmation"
+    again = client.post(f"/api/requests/{second['request_id']}/confirm", json={"resident_id": "sam"})
+    assert again.status_code == 200, again.text
+    body = again.json()
+    assert body["type"] == "match"
+    assert body["filled_quantity"] == 10
+    assert body["complete"] is False
+    second_id = body["handoff_id"]
+    assert client.post(f"/api/handoffs/{second_id}/confirm", json={"resident_id": "avery"}).status_code == 200
+    finished = client.post(f"/api/handoffs/{second_id}/confirm", json={"resident_id": "sam"})
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "confirmed"
+    assert client.post(f"/api/handoffs/{second_id}/received").status_code == 200
+    after = {row["id"]: row for row in client.get("/api/activity").json()["requests"]}
+    assert after[need["request_id"]]["status"] == "open"
+    assert after[need["request_id"]]["quantity"] == 5
+
+
+def test_remote_inventory_cannot_be_taken_over(client, monkeypatch):
+    remote = {
+        "jordan-ladder": {
+            "inventory_id": "jordan-ladder",
+            "resident_id": "jordan",
+            "resident_name": "Jordan Lee",
+            "catalog_item": "Ladder",
+            "quantity": 1,
+            "willing_to_lend": True,
+            "condition_note": "",
+            "x": 2,
+            "y": 1,
+            "category": "Garden",
+            "condition": "Good",
+        }
+    }
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.fetch_inventory_row", lambda item_id: remote.get(item_id))
+    stolen = client.patch(
+        "/api/inventory/jordan-ladder",
+        json={"resident_id": "avery", "name": "Ladder", "category": "Garden", "quantity": 1, "condition": "Good", "notes": "", "available_to_lend": True},
+    )
+    assert stolen.status_code == 403
+    missing = client.patch(
+        "/api/inventory/missing-item",
+        json={"resident_id": "avery", "name": "Ladder", "category": "Garden", "quantity": 1, "condition": "Good", "notes": "", "available_to_lend": True},
+    )
+    assert missing.status_code == 404
+
+
+def test_failed_update_restores_the_remote_row(client, monkeypatch):
+    store = {}
+
+    def upsert(row):
+        store[row["inventory_id"]] = dict(row)
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert)
+    monkeypatch.setattr("app.logic.snowflake_store.fetch_inventory_row", lambda item_id: store.get(item_id))
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", lambda item_id: store.pop(item_id, None))
+    created = client.post(
+        "/api/inventory",
+        json={"resident_id": "avery", "name": "Ladder", "category": "Garden", "quantity": 1, "condition": "Fair", "notes": "", "available_to_lend": True},
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["inventory_id"]
+    monkeypatch.setattr("app.logic._commit_session", lambda _session: (_ for _ in ()).throw(RuntimeError("sqlite failed")))
+    with pytest.raises(RuntimeError, match="sqlite failed"):
+        client.patch(
+            f"/api/inventory/{item_id}",
+            json={"resident_id": "avery", "name": "Step ladder", "category": "Garden", "quantity": 0, "condition": "Fair", "notes": "", "available_to_lend": True},
+        )
+    assert store[item_id]["catalog_item"] == "Ladder"
+    assert store[item_id]["quantity"] == 1
+
+
+def test_zero_quantity_is_sent_to_snowflake():
+    from app.snowflake_store import _inventory_params, _inventory_update_params
+
+    row = {
+        "inventory_id": "item-1",
+        "resident_id": "avery",
+        "resident_name": "Avery Moss",
+        "x": 0,
+        "y": 0,
+        "catalog_item": "Fan",
+        "quantity": 0,
+        "willing_to_lend": False,
+        "condition_note": "",
+        "category": "Household",
+        "condition": "Good",
+    }
+    assert _inventory_params(row)[6] == 0
+    assert _inventory_update_params(row)[5] == 0
+
+
+def test_loans_stay_in_one_city_and_free_dates_do_not_block(client):
+    from app.db import session_scope
+    from app.models import Resident
+
+    with session_scope() as session:
+        jordan = session.get(Resident, "jordan")
+        jordan.city = "Seattle"
+        session.add(jordan)
+        session.commit()
+    denied = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "avery",
+            "lender_id": "jordan",
+            "catalog_item_id": "drill",
+            "window_start": "2026-10-20T09:00:00",
+            "window_end": "2026-10-20T11:00:00",
+        },
+    )
+    assert denied.status_code == 400
+    with session_scope() as session:
+        jordan = session.get(Resident, "jordan")
+        jordan.city = "Charlotte"
+        jordan.x = 500
+        session.add(jordan)
+        session.commit()
+    far = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "avery",
+            "lender_id": "jordan",
+            "catalog_item_id": "drill",
+            "window_start": "2026-10-20T09:00:00",
+            "window_end": "2026-10-20T11:00:00",
+        },
+    )
+    assert far.status_code == 400
+    with session_scope() as session:
+        jordan = session.get(Resident, "jordan")
+        jordan.x = 2
+        session.add(jordan)
+        session.commit()
+    offered = client.post(
+        "/api/inventory",
+        json={"resident_id": "jordan", "name": "Drill", "category": "Tools", "quantity": 1, "condition": "Good", "notes": "", "available_to_lend": True},
+    )
+    assert offered.status_code == 201, offered.text
+    first = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "avery",
+            "lender_id": "jordan",
+            "catalog_item_id": "drill",
+            "inventory_id": offered.json()["inventory_id"],
+            "window_start": "2026-10-20T09:00:00",
+            "window_end": "2026-10-20T11:00:00",
+        },
+    )
+    assert first.status_code == 201, first.text
+    later = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "sam",
+            "lender_id": "jordan",
+            "catalog_item_id": "drill",
+            "inventory_id": offered.json()["inventory_id"],
+            "window_start": "2026-10-25T09:00:00",
+            "window_end": "2026-10-25T11:00:00",
+        },
+    )
+    assert later.status_code == 201, later.text
+
+
+def test_a_new_shelf_item_can_fill_a_project(client):
+    offered = client.post(
+        "/api/inventory",
+        json={"resident_id": "jordan", "name": "Step ladder", "category": "Tools", "quantity": 1, "condition": "Good", "notes": "", "available_to_lend": True},
+    )
+    assert offered.status_code == 201, offered.text
+    assert offered.json()["catalog_item_id"] == "ladder"
+    card = _say(client, "avery", "I'm building a bookshelf this weekend.")
+    drill = next(tool for tool in card["tools"] if tool["catalog_item_id"] == "drill")
+    client.post(
+        "/api/inventory",
+        json={"resident_id": "jordan", "name": "Drill", "category": "Tools", "quantity": 1, "condition": "Good", "notes": "", "available_to_lend": True},
+    )
+    card = _say(client, "avery", "I'm building a bookshelf this weekend.")
+    drill = next(tool for tool in card["tools"] if tool["catalog_item_id"] == "drill")
+    assert any(row["resident_id"] == "jordan" for row in drill["neighbors"])
+
 

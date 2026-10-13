@@ -31,7 +31,7 @@ def _pair(kid="relay-test"):
 
 
 def _token(private, sub, iss=ISSUER, exp=None, kid="relay-test"):
-    payload = {"sub": sub, "iss": iss, "exp": int(exp if exp is not None else time.time() + 120)}
+    payload = {"sub": sub, "iss": iss, "iat": int(time.time()), "exp": int(exp if exp is not None else time.time() + 120)}
     return jwt.encode(payload, private, algorithm="RS256", headers={"kid": kid})
 
 
@@ -71,6 +71,17 @@ def test_missing_expired_tampered_and_wrong_instance_tokens_are_rejected(client,
     stranger_key, _other_jwk = _pair("other-instance")
     foreign = _token(stranger_key, "avery", kid="other-instance")
     assert client.get("/api/my-stuff", params={"resident_id": "avery"}, headers=_auth(foreign)).status_code == 401
+
+    timeless = jwt.encode(
+        {"sub": "avery", "iss": ISSUER},
+        private,
+        algorithm="RS256",
+        headers={"kid": "relay-test"},
+    )
+    assert client.get("/api/my-stuff", params={"resident_id": "avery"}, headers=_auth(timeless)).status_code == 401
+
+    monkeypatch.setenv("CLERK_ISSUER", "")
+    assert client.get("/api/my-stuff", params={"resident_id": "avery"}, headers=_auth(_token(private, "avery"))).status_code == 503
 
 
 def test_two_signed_in_accounts_loan_and_partial_handoff(client, monkeypatch):
