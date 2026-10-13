@@ -7,6 +7,13 @@ const clerkDir = path.join(process.cwd(), 'playwright/.clerk')
 
 setup.describe.configure({ mode: 'serial' })
 
+// Playwright requires an object pattern for the fixtures argument.
+// eslint-disable-next-line no-empty-pattern
+setup.afterEach(async ({}, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return
+  await deleteCreatedAccounts()
+})
+
 setup('prepare two Clerk accounts', async () => {
   await clerkSetup()
   fs.mkdirSync(clerkDir, { recursive: true })
@@ -39,7 +46,7 @@ async function signIn(page: import('@playwright/test').Page, role: 'lender' | 'b
 
 async function createAccount(role: string, stamp: number) {
   const secret = process.env.CLERK_SECRET_KEY
-  if (!secret) throw new Error('CLERK_SECRET_KEY is missing from .env.local')
+  if (!secret) throw new Error('Set CLERK_SECRET_KEY in the environment or in .env.local')
   const email = `relay-${role}-${stamp}+clerk_test@example.com`
   const first = 'Relay'
   const last = role === 'lender' ? 'Lender' : 'Borrower'
@@ -62,5 +69,33 @@ async function createAccount(role: string, stamp: number) {
     throw new Error(`Clerk could not create the ${role} account (${response.status}): ${detail}`)
   }
   const body = (await response.json()) as { id: string }
-  return { id: body.id, email, name: `${first} ${last}` }
+  const account = { id: body.id, email, name: `${first} ${last}` }
+  rememberAccount(role, account)
+  return account
+}
+
+function rememberAccount(role: string, account: { id: string; email: string; name: string }) {
+  fs.mkdirSync(clerkDir, { recursive: true })
+  const file = path.join(clerkDir, 'accounts.json')
+  const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown> : {}
+  current[role] = account
+  fs.writeFileSync(file, JSON.stringify(current))
+}
+
+async function deleteCreatedAccounts() {
+  const secret = process.env.CLERK_SECRET_KEY
+  const file = path.join(clerkDir, 'accounts.json')
+  if (!secret || !fs.existsSync(file)) return
+  const accounts = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, { id?: string }>
+  await Promise.all(
+    Object.values(accounts).map((account) =>
+      account.id
+        ? fetch(`https://api.clerk.com/v1/users/${account.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${secret}` },
+          })
+        : Promise.resolve(),
+    ),
+  )
+  fs.rmSync(file, { force: true })
 }

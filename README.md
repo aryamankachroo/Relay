@@ -52,7 +52,13 @@ The catalog is general on purpose: chairs, bikes, tents, tools, and supplies, no
 ```sh
 cd backend && source .venv/bin/activate && python -m pytest
 npm run lint
-npx tsc -b
+npm run test:unit
+npm run build
+npm start
 ```
+
+`npm start` serves `build/client`. A visit to `/activity` or `/my-stuff` returns the app shell, so a refresh on those routes keeps working.
+
+Browser coverage needs Clerk development keys. Put `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` in `.env.local`, or export `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Then run `npm run test:e2e`. The test creates two temporary Clerk users, walks onboarding, a shelf edit, a loan, and a partial handoff, then deletes those users. If setup fails after a user is created, that user is deleted too. GitHub Actions runs the same check when those two secrets are set on the repository.
 
 Chat still answers “I’m building a bookshelf this weekend” and “I need 20 notebooks Saturday morning” when the model keys are empty, using the catalog fallback.

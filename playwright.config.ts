@@ -4,12 +4,17 @@ import { defineConfig, devices } from '@playwright/test'
 
 const root = import.meta.dirname
 const localEnv = readEnv(path.join(root, '.env.local'))
-const publishableKey = localEnv.VITE_CLERK_PUBLISHABLE_KEY ?? ''
-const secretKey = localEnv.CLERK_SECRET_KEY ?? ''
+const publishableKey =
+  process.env.CLERK_PUBLISHABLE_KEY ||
+  process.env.VITE_CLERK_PUBLISHABLE_KEY ||
+  localEnv.VITE_CLERK_PUBLISHABLE_KEY ||
+  ''
+const secretKey = process.env.CLERK_SECRET_KEY || localEnv.CLERK_SECRET_KEY || ''
 
 process.env.CLERK_PUBLISHABLE_KEY ||= publishableKey
 process.env.CLERK_SECRET_KEY ||= secretKey
 
+const python = fs.existsSync(path.join(root, 'backend/.venv/bin/python')) ? '.venv/bin/python' : 'python'
 const apiPort = 8011
 const webPort = 5174
 const issuer = clerkIssuer(publishableKey)
@@ -49,7 +54,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `rm -f e2e.db && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${apiPort}`,
+      command: `rm -f e2e.db && ${python} -m uvicorn app.main:app --host 127.0.0.1 --port ${apiPort}`,
       cwd: path.join(root, 'backend'),
       url: `http://127.0.0.1:${apiPort}/health`,
       timeout: 120_000,
