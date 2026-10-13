@@ -8,6 +8,7 @@
     "dev:lan": "react-router dev --host",
     "build": "react-router typegen && tsc -b && react-router build",
     "lint": "eslint .",
+    "test:e2e": "playwright test",
     "preview": "react-router-serve ./build/server/index.js",
     "start": "react-router-serve ./build/server/index.js",
     "ios": "npm run build && cap sync ios && cap open ios"
@@ -31,7 +32,9 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.2.45",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
     "@react-router/dev": "^7.18.4",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

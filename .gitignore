@@ -31,6 +31,12 @@ build/
 backend/.env
 backend/.venv
 backend/relay.db
+backend/e2e.db
+
+# Playwright auth state and reports
+/playwright/.clerk/
+/playwright-report/
+/test-results/
 backend/.pytest_cache
 **/__pycache__/
 *.pyc
