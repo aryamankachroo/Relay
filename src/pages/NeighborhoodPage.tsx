@@ -26,27 +26,37 @@ export function NeighborhoodPage() {
   const [selectedId, setSelectedId] = useState<SceneResidentId | null>(null)
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
   const [filter, setFilter] = useState<MapFilter>('all')
+  const [query, setQuery] = useState('')
 
   const links = useMemo(() => shareLinksFromLoans(loans), [loans])
   const lendingIds = useMemo(() => {
     const ids = new Set<string>()
     for (const resident of sceneResidents) {
-      if (itemsForResident(resident.id, items, loans).length > 0) ids.add(resident.id)
+      if (itemsForResident(resident.id, items, loans).length > 0 || (resident.offers?.length ?? 0) > 0) {
+        ids.add(resident.id)
+      }
     }
     return ids
   }, [items, loans])
 
   const visibleResidents = useMemo(() => {
+    const needle = query.trim().toLowerCase()
     return sceneResidents.filter((resident) => {
-      if (filter === 'lending') return lendingIds.has(resident.id)
+      if (filter === 'lending' && !lendingIds.has(resident.id)) return false
       if (filter === 'loans') {
-        return links.some(
+        const onLoan = links.some(
           (link) => link.active && (link.fromId === resident.id || link.toId === resident.id),
         )
+        if (!onLoan) return false
       }
-      return true
+      if (!needle) return true
+      const offered = itemsForResident(resident.id, items, loans).map((item) => item.name)
+      const haystack = [resident.name, resident.street, ...(resident.offers ?? []), ...offered]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(needle)
     })
-  }, [filter, lendingIds, links])
+  }, [filter, items, lendingIds, links, loans, query])
 
   const visibleIds = useMemo(
     () => new Set(visibleResidents.map((resident) => resident.id)),
@@ -62,10 +72,14 @@ export function NeighborhoodPage() {
     selectedLinkId && visibleLinks.some((link) => link.id === selectedLinkId) ? selectedLinkId : null
 
   const selected = activeResidentId ? sceneResidentById(activeResidentId) : null
-  const selectedItems = useMemo(
-    () => (activeResidentId ? itemsForResident(activeResidentId, items, loans) : []),
-    [activeResidentId, items, loans],
-  )
+  const selectedItems = useMemo(() => {
+    if (!activeResidentId) return []
+    const listed = itemsForResident(activeResidentId, items, loans)
+    const extras = (sceneResidentById(activeResidentId)?.offers ?? [])
+      .filter((name) => !listed.some((item) => item.name === name))
+      .map((name) => ({ id: name, name, detail: 'Ready to lend' }))
+    return [...listed, ...extras]
+  }, [activeResidentId, items, loans])
   const selectedLoan = activeLinkId ? (loans.find((loan) => loan.id === activeLinkId) ?? null) : null
   const activeLinks = links.filter((link) => link.active)
   const pendingLinks = links.filter((link) => !link.active)
@@ -89,7 +103,9 @@ export function NeighborhoodPage() {
   }
 
   const emptyMessage =
-    filter === 'loans' && visibleResidents.length === 0
+    query.trim() && visibleResidents.length === 0
+      ? `No people, products, or inventory match “${query.trim()}”.`
+      : filter === 'loans' && visibleResidents.length === 0
       ? 'No active loans right now.'
       : filter === 'lending' && visibleResidents.length === 0
         ? 'Nobody has something listed to lend.'
@@ -115,6 +131,15 @@ export function NeighborhoodPage() {
       </GlassCard>
 
       <GlassCard tone="solid" className="hood-stage">
+        <div className="hood-search">
+          <input
+            type="search"
+            value={query}
+            aria-label="Search people, products, and inventory"
+            placeholder="Search people, products, inventory"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
         <div className="hood-filters" role="group" aria-label="Show residents">
           <FilterButton
             pressed={filter === 'all'}

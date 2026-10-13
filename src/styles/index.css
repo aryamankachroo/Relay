@@ -3588,6 +3588,17 @@
     padding: 0.65rem;
   }
 
+  .hood-search input {
+    width: 100%;
+    min-height: 2.6rem;
+    border: 1px solid color-mix(in srgb, var(--relay-color-sky-500) 35%, white);
+    border-radius: var(--relay-radius-pill);
+    background: color-mix(in srgb, var(--relay-color-white) 88%, var(--relay-color-sky-100));
+    padding: 0.45rem 0.9rem;
+    color: var(--relay-color-ink);
+    font: inherit;
+  }
+
   .hood-filters {
     display: flex;
     flex-wrap: wrap;

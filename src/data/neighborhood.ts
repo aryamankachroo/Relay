@@ -19,6 +19,8 @@ export type SceneResident = {
   /** Fictional demo profile. Not a geocoded address and not the map pin. */
   street: string
   isYou: boolean
+  /** Items this person will lend, used by map search when there is no loan listing. */
+  offers?: readonly string[]
   /**
    * Placement on the real map backdrop. These points sit on a compact cluster
    * of residential blocks in Park Slope so the demo reads as one neighborhood.
@@ -90,6 +92,36 @@ export const sceneResidents: readonly SceneResident[] = [
     isYou: false,
     longitude: -73.980326,
     latitude: 40.666533,
+  },
+  {
+    id: 'neighbor-luis',
+    name: 'Luis Alvarez',
+    initials: 'LA',
+    street: '11 Willow Court',
+    isYou: false,
+    offers: ['Garden hose', 'Soccer ball'],
+    longitude: -73.9814,
+    latitude: 40.6681,
+  },
+  {
+    id: 'neighbor-nia',
+    name: 'Nia Patel',
+    initials: 'NP',
+    street: '4 Oak Lane',
+    isYou: false,
+    offers: ['Folding table', 'Mixing bowl'],
+    longitude: -73.9796,
+    latitude: 40.6674,
+  },
+  {
+    id: 'neighbor-owen',
+    name: 'Owen Blake',
+    initials: 'OB',
+    street: '7 Willow Court',
+    isYou: false,
+    offers: ['Extension cord', 'Hedge trimmer'],
+    longitude: -73.9831,
+    latitude: 40.6672,
   },
 ]
 
