@@ -58,7 +58,7 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
   const advanceLoan = useCallback(
     async (requestId: string) => {
       const loan = requests.find((item) => item.id === requestId)
-      if (!loan) return
+      if (!loan) return 'That loan is no longer on this list.'
       const step =
         loan.status === 'Requested'
           ? api.respondLoan(loan.id, 'accept')
@@ -67,9 +67,15 @@ export function LoanRequestsProvider({ children }: { children: ReactNode }) {
             : loan.status === 'Picked up'
               ? api.returnLoan(loan.id)
               : null
-      // A 409 means another tab already moved this loan; the refresh shows where it is.
-      await step?.catch(() => null)
+      if (!step) return null
+      try {
+        await step
+      } catch (caught) {
+        await refresh()
+        return loanProblem(caught)
+      }
       await refresh()
+      return null
     },
     [requests, refresh],
   )

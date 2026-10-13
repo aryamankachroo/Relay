@@ -160,8 +160,10 @@ function FilterButton({
   )
 }
 
-function LoanActivityCard({ loan, onAdvance }: { loan: LoanRequest; onAdvance: () => void }) {
+function LoanActivityCard({ loan, onAdvance }: { loan: LoanRequest; onAdvance: () => Promise<string | null> }) {
   const titleId = useId()
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const complete = isLoanComplete(loan.status)
   const lending = isResidentLending(loan)
   const action = loanActionLabel(loan)
@@ -228,9 +230,22 @@ function LoanActivityCard({ loan, onAdvance }: { loan: LoanRequest; onAdvance: (
         <p className="loan-state-copy">{loanStatusCopy(loan)}</p>
         {action ? (
           <>
-            <button type="button" className="loan-lender" onClick={onAdvance}>
-              {action}
+            <button
+              type="button"
+              className="loan-lender"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                setNote(null)
+                void onAdvance().then((message) => {
+                  setNote(message)
+                  setBusy(false)
+                })
+              }}
+            >
+              {busy ? 'Saving…' : action}
             </button>
+            {note ? <p className="hint loan-lender-hint">{note}</p> : null}
             {loan.status === 'Requested' && !lending ? (
               <p className="hint loan-lender-hint">A stand-in, so you can move the loan forward.</p>
             ) : null}
