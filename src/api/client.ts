@@ -4,15 +4,13 @@ import type {
   ApiChatCard,
   ApiHandoff,
   ApiInventory,
+  ApiInventoryItem,
   ApiLoan,
   ApiProject,
   ApiResident,
 } from './types.ts'
 
 export const apiBase = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
-
-/** Loan cards still treat the demo neighbor Avery as the local borrower. */
-export const residentId = 'avery'
 
 export class ApiError extends Error {
   status: number
@@ -55,6 +53,24 @@ export const api = {
     post<{ id: string; name: string; resident_id: string }>('/api/me', body),
   inventory: (residentId: string) =>
     request<ApiInventory>(`/api/inventory?resident_id=${encodeURIComponent(residentId)}`),
+  createInventory: (
+    residentId: string,
+    body: { name: string; category: string; quantity: number; condition: string; notes: string; available_to_lend: boolean },
+  ) => post<ApiInventoryItem>('/api/inventory', { resident_id: residentId, ...body }),
+  updateInventory: (
+    residentId: string,
+    itemId: string,
+    body: { name: string; category: string; quantity: number; condition: string; notes: string; available_to_lend: boolean },
+  ) =>
+    request<ApiInventoryItem>(`/api/inventory/${encodeURIComponent(itemId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resident_id: residentId, ...body }),
+    }),
+  deleteInventory: (residentId: string, itemId: string) =>
+    request<{ deleted: string }>(
+      `/api/inventory/${encodeURIComponent(itemId)}?resident_id=${encodeURIComponent(residentId)}`,
+      { method: 'DELETE' },
+    ),
   neighborhood: (residentId: string) =>
     request<ApiInventory>(`/api/neighborhood?resident_id=${encodeURIComponent(residentId)}`),
   catalog: () => request<ApiCatalogItem[]>('/api/catalog'),

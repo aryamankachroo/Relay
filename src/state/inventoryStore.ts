@@ -5,10 +5,10 @@ export type InventoryStore = {
   items: readonly InventoryItem[]
   status: 'loading' | 'ready' | 'error'
   message: string
-  addItem: (draft: InventoryDraft) => boolean
-  updateItem: (id: string, draft: InventoryDraft) => boolean
-  removeItem: (id: string) => void
-  setAvailableToLend: (id: string, available: boolean) => void
+  addItem: (draft: InventoryDraft) => Promise<boolean>
+  updateItem: (id: string, draft: InventoryDraft) => Promise<boolean>
+  removeItem: (id: string) => Promise<void>
+  setAvailableToLend: (id: string, available: boolean) => Promise<void>
 }
 
 export const InventoryContext = createContext<InventoryStore | null>(null)

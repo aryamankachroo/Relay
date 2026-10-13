@@ -126,12 +126,12 @@ export function MyStuffPage() {
     setFormNote('')
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!editor) return
 
     const saved =
-      editor.mode === 'add' ? addItem(draft) : updateItem(editor.item.id, draft)
+      editor.mode === 'add' ? await addItem(draft) : await updateItem(editor.item.id, draft)
 
     if (!saved) {
       setFormNote(
@@ -426,7 +426,9 @@ function InventoryCard({
   )
 }
 
-function IncomingLoanRow({ loan, onAccept }: { loan: LoanRequest; onAccept: () => void }) {
+function IncomingLoanRow({ loan, onAccept }: { loan: LoanRequest; onAccept: () => Promise<string | null> }) {
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   return (
     <div className="shelf-incoming-row">
       <div className="shelf-incoming-copy">
@@ -435,9 +437,22 @@ function IncomingLoanRow({ loan, onAccept }: { loan: LoanRequest; onAccept: () =
           {loan.borrowerName ?? 'A neighbor'} · pickup {loan.pickupLabel} · back by {loan.returnLabel}
         </p>
       </div>
-      <button type="button" className="loan-lender" onClick={onAccept}>
-        Accept request
+      <button
+        type="button"
+        className="loan-lender"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          setNote(null)
+          void onAccept().then((message) => {
+            setNote(message)
+            setBusy(false)
+          })
+        }}
+      >
+        {busy ? 'Saving…' : 'Accept request'}
       </button>
+      {note ? <p className="hint">{note}</p> : null}
     </div>
   )
 }

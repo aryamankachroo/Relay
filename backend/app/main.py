@@ -16,6 +16,8 @@ from app.logic import (
     decline_handoff,
     garden_count,
     handle_chat,
+    create_shelf_item,
+    delete_shelf_item,
     inventory_view,
     my_stuff,
     neighborhood,
@@ -27,10 +29,11 @@ from app.logic import (
     return_loan,
     shared_demand,
     start_group_buy,
+    update_shelf_item,
     update_tool,
 )
 from app.models import CatalogItem, Resident
-from app.seed import initials_for, seed
+from app.seed import ensure_extra_inventory, initials_for, seed
 from app.snowflake_store import SnowflakeError, status as snowflake_status, upsert_profile
 
 
@@ -86,11 +89,22 @@ class ResidentAction(BaseModel):
     resident_id: str
 
 
+class ShelfIn(BaseModel):
+    resident_id: str
+    name: str
+    category: str = "Household"
+    quantity: int = Field(default=1, ge=0, le=99)
+    condition: str = ""
+    notes: str = ""
+    available_to_lend: bool = True
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     with session_scope() as session:
         seed(session)
+    ensure_extra_inventory()
     yield
 
 
@@ -232,6 +246,37 @@ def create_app() -> FastAPI:
     @app.get("/api/inventory")
     def list_inventory(resident_id: str | None = None, session: Session = Depends(get_session)):
         return inventory_view(session, resident_id)
+
+    @app.post("/api/inventory", status_code=201)
+    def post_inventory(body: ShelfIn, session: Session = Depends(get_session)):
+        return create_shelf_item(
+            session,
+            body.resident_id,
+            body.name,
+            body.category,
+            body.quantity,
+            body.condition,
+            body.notes,
+            body.available_to_lend,
+        )
+
+    @app.patch("/api/inventory/{item_id}")
+    def patch_inventory(item_id: str, body: ShelfIn, session: Session = Depends(get_session)):
+        return update_shelf_item(
+            session,
+            body.resident_id,
+            item_id,
+            body.name,
+            body.category,
+            body.quantity,
+            body.condition,
+            body.notes,
+            body.available_to_lend,
+        )
+
+    @app.delete("/api/inventory/{item_id}")
+    def remove_inventory(item_id: str, resident_id: str, session: Session = Depends(get_session)):
+        return delete_shelf_item(session, resident_id, item_id)
 
     @app.get("/api/my-stuff")
     def get_my_stuff(resident_id: str = "avery", session: Session = Depends(get_session)):

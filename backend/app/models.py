@@ -99,3 +99,14 @@ class GroupBuy(SQLModel, table=True):
     id: str = Field(primary_key=True)
     catalog_item_id: str
     created_at: datetime
+
+
+class ShelfItem(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    resident_id: str
+    name: str
+    category: str = "Household"
+    quantity: int = 1
+    condition: str = ""
+    notes: str = ""
+    available_to_lend: bool = True

@@ -18,7 +18,6 @@ import {
   type ToolCondition,
   type ToolPortraitId,
 } from '../data/lending.ts'
-import { residentId } from './client.ts'
 import type {
   ApiActivity,
   ApiCatalogItem,
@@ -134,7 +133,7 @@ const loanStatuses: Record<ApiLoan['status'], LoanStatus | null> = {
   declined: null,
 }
 
-export function loanFromApi(loan: ApiLoan, directory: Directory, viewerId = residentId): LoanRequest | null {
+export function loanFromApi(loan: ApiLoan, directory: Directory, viewerId: string): LoanRequest | null {
   const status = loanStatuses[loan.status]
   if (!status) return null
   const name = directory.catalog.get(loan.catalog_item_id)?.name ?? loan.catalog_item_id
@@ -181,7 +180,7 @@ const hiddenRequestStatuses = new Set(['pending_confirm', 'declined'])
 export function exchangeRequestsFromApi(
   activity: ApiActivity,
   directory: Directory,
-  viewerId = residentId,
+  viewerId: string,
 ): ExchangeRequest[] {
   const live = activity.handoffs.filter((handoff) => handoff.status !== 'declined')
   return activity.requests.flatMap((request) => {
@@ -220,7 +219,7 @@ export function exchangeRequestsFromApi(
 export function handoffsFromApi(
   activity: ApiActivity,
   directory: Directory,
-  viewerId = residentId,
+  viewerId: string,
 ): HandoffRecord[] {
   const requests = new Map(activity.requests.map((row) => [row.id, row]))
   return activity.handoffs.flatMap((handoff): HandoffRecord[] => {
@@ -302,7 +301,7 @@ function handoffPart(
   post: ApiRequest | undefined,
   need: ApiRequest | undefined,
   directory: Directory,
-  viewerId = residentId,
+  viewerId: string,
 ): HandoffPart {
   const neighbor = directory.residents.get(neighborId)
   const avery = directory.residents.get(viewerId)

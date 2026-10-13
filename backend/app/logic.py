@@ -19,6 +19,7 @@ from app.models import (
     ProjectTool,
     Request,
     Resident,
+    ShelfItem,
 )
 from app.scheduler import first_free_slot, overlaps, schedule_shared
 from app.extract import extract_message
@@ -360,22 +361,183 @@ def start_group_buy(session: Session, catalog_item_id: str) -> dict:
 
 
 def inventory_view(session: Session, resident_id: str | None = None) -> dict:
+    local = _local_inventory(session, resident_id)
     raw = snowflake_store.fetch_inventory()
     if raw["snowflake"] != "ok":
-        payload = {"snowflake": raw["snowflake"], "items": []}
+        payload = {"snowflake": raw["snowflake"], "items": local}
         if raw.get("snowflake_message"):
             payload["snowflake_message"] = raw["snowflake_message"]
         return payload
     catalog = _catalog(session)
     items = []
+    seen = set()
     for row in raw["items"]:
         label = str(row.get("catalog_item") or "")
         match = _match_label(label, catalog)
         owner = str(row.get("resident_id") or "")
         if resident_id is not None and owner != resident_id:
             continue
-        items.append(_inventory_item(row, match))
+        item = _inventory_item(row, match)
+        items.append(item)
+        seen.add((item["resident_id"], str(item["catalog_item"]).lower()))
+    for item in local:
+        key = (item["resident_id"], str(item["catalog_item"]).lower())
+        if key not in seen:
+            items.append(item)
     return {"snowflake": "ok", "items": items}
+
+
+def create_shelf_item(
+    session: Session,
+    resident_id: str,
+    name: str,
+    category: str,
+    quantity: int,
+    condition: str,
+    notes: str,
+    available_to_lend: bool,
+) -> dict:
+    resident = _resident(session, resident_id)
+    cleaned = " ".join(name.split())
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Give this item a name first.")
+    if _shelf_name_taken(session, resident.id, cleaned):
+        raise HTTPException(status_code=409, detail="That name is already on your shelf.")
+    item = ShelfItem(
+        id=str(uuid4()),
+        resident_id=resident.id,
+        name=cleaned,
+        category=category or "Household",
+        quantity=max(0, quantity),
+        condition=condition,
+        notes=notes.strip(),
+        available_to_lend=available_to_lend,
+    )
+    session.add(item)
+    session.commit()
+    _mirror_inventory(resident, item, None)
+    return _shelf_dict(item, resident)
+
+
+def update_shelf_item(
+    session: Session,
+    resident_id: str,
+    item_id: str,
+    name: str,
+    category: str,
+    quantity: int,
+    condition: str,
+    notes: str,
+    available_to_lend: bool,
+) -> dict:
+    resident = _resident(session, resident_id)
+    cleaned = " ".join(name.split())
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Give this item a name first.")
+    item = session.get(ShelfItem, item_id)
+    previous = item.name if item is not None and item.resident_id == resident.id else _label_for_id(session, resident.id, item_id)
+    if item is not None and item.resident_id != resident.id:
+        raise HTTPException(status_code=403, detail="That item belongs to someone else.")
+    if _shelf_name_taken(session, resident.id, cleaned, ignore_id=item.id if item else None):
+        raise HTTPException(status_code=409, detail="That name is already on your shelf.")
+    if item is None:
+        item = ShelfItem(id=item_id, resident_id=resident.id, name=cleaned)
+    item.name = cleaned
+    item.category = category or item.category or "Household"
+    item.quantity = max(0, quantity)
+    item.condition = condition
+    item.notes = notes.strip()
+    item.available_to_lend = available_to_lend
+    session.add(item)
+    session.commit()
+    _mirror_inventory(resident, item, previous or cleaned)
+    return _shelf_dict(item, resident)
+
+
+def delete_shelf_item(session: Session, resident_id: str, item_id: str) -> dict:
+    resident = _resident(session, resident_id)
+    item = session.get(ShelfItem, item_id)
+    if item is not None and item.resident_id != resident.id:
+        raise HTTPException(status_code=403, detail="That item belongs to someone else.")
+    label = item.name if item is not None else _label_for_id(session, resident.id, item_id)
+    if item is not None:
+        session.delete(item)
+        session.commit()
+    if label and snowflake_store.configured():
+        snowflake_store.delete_inventory(resident.id, label)
+    return {"deleted": item_id}
+
+
+def _shelf_name_taken(session: Session, resident_id: str, name: str, ignore_id: str | None = None) -> bool:
+    key = name.lower()
+    rows = session.exec(select(ShelfItem).where(ShelfItem.resident_id == resident_id)).all()
+    return any(row.id != ignore_id and row.name.lower() == key for row in rows)
+
+
+def _local_inventory(session: Session, resident_id: str | None) -> list[dict]:
+    query = select(ShelfItem)
+    if resident_id is not None:
+        query = query.where(ShelfItem.resident_id == resident_id)
+    rows = session.exec(query).all()
+    items = []
+    for row in rows:
+        resident = session.get(Resident, row.resident_id)
+        if resident is None:
+            continue
+        items.append(_shelf_dict(row, resident))
+    return items
+
+
+def _shelf_dict(item: ShelfItem, resident: Resident) -> dict:
+    return {
+        "inventory_id": item.id,
+        "resident_id": resident.id,
+        "resident_name": resident.name,
+        "x": resident.x,
+        "y": resident.y,
+        "catalog_item": item.name,
+        "catalog_item_id": None,
+        "catalog_name": item.name,
+        "category": item.category,
+        "condition": item.condition,
+        "quantity": item.quantity,
+        "willing_to_lend": item.available_to_lend,
+        "condition_note": item.notes,
+    }
+
+
+def _label_for_id(session: Session, resident_id: str, item_id: str) -> str | None:
+    prefix = f"{resident_id}:"
+    if item_id.startswith(prefix):
+        token = item_id[len(prefix):]
+        for item in _catalog(session):
+            if item.id == token:
+                return item.name
+        return token
+    return None
+
+
+def _mirror_inventory(resident: Resident, item: ShelfItem, previous_name: str | None) -> None:
+    if not snowflake_store.configured():
+        return
+    row = {
+        "resident_id": resident.id,
+        "resident_name": resident.name,
+        "x": resident.x,
+        "y": resident.y,
+        "catalog_item": item.name,
+        "quantity": item.quantity,
+        "willing_to_lend": item.available_to_lend,
+        "condition_note": item.notes,
+    }
+    try:
+        if previous_name and previous_name != item.name:
+            snowflake_store.update_inventory(resident.id, previous_name, row)
+        else:
+            snowflake_store.insert_inventory_if_missing(row)
+            snowflake_store.update_inventory(resident.id, previous_name or item.name, row)
+    except snowflake_store.SnowflakeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def neighborhood(session: Session, resident_id: str) -> dict:
@@ -909,6 +1071,17 @@ def _lender_item(row: dict) -> LenderItem:
     )
 
 
+def _ui_category(category: str | None) -> str:
+    return {
+        "tool": "Tools",
+        "garden": "Garden",
+        "kitchen": "Kitchen",
+        "household": "Household",
+        "sports": "Sports",
+        "supply": "Household",
+    }.get(category or "", "Household")
+
+
 def _inventory_item(row: dict, match: CatalogItem | None) -> dict:
     willing = row.get("willing_to_lend")
     if isinstance(willing, str):
@@ -923,7 +1096,9 @@ def _inventory_item(row: dict, match: CatalogItem | None) -> dict:
         "catalog_item": row.get("catalog_item"),
         "catalog_item_id": match.id if match else None,
         "catalog_name": match.name if match else row.get("catalog_item"),
-        "quantity": row.get("quantity") or 0,
+        "category": _ui_category(match.category if match else None),
+        "condition": row.get("condition") or "",
+        "quantity": row.get("quantity") if row.get("quantity") is not None else 0,
         "willing_to_lend": bool(willing),
         "condition_note": row.get("condition_note") or "",
         "windows": _windows(row.get("available_windows")),

@@ -181,6 +181,69 @@ def test_shared_drill_demand_waits_for_inventory(client):
     assert started.json() == {"catalog_item_id": "drill", "started": True, "mock": True}
 
 
+def test_shelf_writes_stay_with_the_owner(client):
+    created = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "avery",
+            "name": "Wheelbarrow",
+            "category": "Garden",
+            "quantity": 0,
+            "condition": "Fair",
+            "notes": "One wheel",
+            "available_to_lend": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["inventory_id"]
+    listed = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    saved = next(row for row in listed["items"] if row["inventory_id"] == item_id)
+    assert saved["catalog_item"] == "Wheelbarrow"
+    assert saved["quantity"] == 0
+    assert saved["category"] == "Garden"
+
+    duplicate = client.post(
+        "/api/inventory",
+        json={"resident_id": "avery", "name": "wheelbarrow", "category": "Garden", "quantity": 1},
+    )
+    assert duplicate.status_code == 409
+
+    stolen = client.patch(
+        f"/api/inventory/{item_id}",
+        json={"resident_id": "jordan", "name": "Wheelbarrow", "category": "Garden", "quantity": 1},
+    )
+    assert stolen.status_code == 403
+
+    removed = client.delete("/api/inventory/" + item_id, params={"resident_id": "avery"})
+    assert removed.status_code == 200
+    after = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    assert all(row["inventory_id"] != item_id for row in after["items"])
+
+
+def test_backboard_then_regex_fallback(client, monkeypatch):
+    from app.extract import extract_message
+
+    catalog = _catalog()
+    monkeypatch.setattr("app.extract._from_gemini", lambda *_args, **_kwargs: None)
+
+    def backboard(_text, _catalog, _now):
+        return Extraction("need", ["notebooks"], 20, None, None, None)
+
+    monkeypatch.setattr("app.extract._from_backboard", backboard)
+    parsed = extract_message("I need 20 notebooks Saturday morning", catalog)
+    assert parsed.intent == "need"
+    assert parsed.item_ids == ["notebooks"]
+    assert parsed.quantity == 20
+
+    monkeypatch.setattr("app.extract._from_backboard", lambda *_args, **_kwargs: None)
+    fallback = extract_message("I need 20 notebooks Saturday morning", catalog)
+    assert fallback.intent == "need"
+    assert fallback.item_ids == ["notebooks"]
+
+    card = _say(client, "avery", "I'm building a bookshelf this weekend.")
+    assert card["type"] == "tool_list"
+
+
 def test_my_stuff_and_neighborhood_are_empty_without_snowflake(client):
     stuff = client.get("/api/my-stuff").json()
     assert stuff["resident"]["name"] == "Avery Moss"

@@ -5,6 +5,7 @@ needs, offers, and borrow asks go once credentials exist. Both statements
 are isolated so the column names can be pointed at the real table later.
 """
 
+import json
 from datetime import datetime
 
 from app.clock import aware, now
@@ -214,6 +215,91 @@ def _next_open_resident(cursor) -> str:
         if owner in counts:
             counts[owner] += 1
     return min(pool, key=lambda candidate: (counts[candidate], candidate))
+
+
+INVENTORY_INSERT_SQL = """
+INSERT INTO INVENTORY (
+    RESIDENT_ID, RESIDENT_NAME, X, Y, CATALOG_ITEM, QUANTITY,
+    WILLING_TO_LEND, CONDITION_NOTE, AVAILABLE_WINDOWS
+)
+SELECT %s, %s, %s, %s, %s, %s, %s, %s, PARSE_JSON(%s)
+WHERE NOT EXISTS (
+    SELECT 1 FROM INVENTORY WHERE RESIDENT_ID = %s AND CATALOG_ITEM = %s
+)
+"""
+
+INVENTORY_UPDATE_SQL = """
+UPDATE INVENTORY
+SET CATALOG_ITEM = %s, QUANTITY = %s, WILLING_TO_LEND = %s, CONDITION_NOTE = %s
+WHERE RESIDENT_ID = %s AND CATALOG_ITEM = %s
+"""
+
+INVENTORY_DELETE_SQL = """
+DELETE FROM INVENTORY
+WHERE RESIDENT_ID = %s AND CATALOG_ITEM = %s
+"""
+
+
+def insert_inventory_if_missing(row: dict) -> None:
+    if not configured():
+        return
+    windows = row.get("available_windows") or [["", ""]]
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                INVENTORY_INSERT_SQL,
+                (
+                    row["resident_id"],
+                    row["resident_name"],
+                    row.get("x") or 0,
+                    row.get("y") or 0,
+                    row["catalog_item"],
+                    int(row.get("quantity") or 1),
+                    bool(row.get("willing_to_lend", True)),
+                    row.get("condition_note") or "",
+                    json.dumps(windows),
+                    row["resident_id"],
+                    row["catalog_item"],
+                ),
+            )
+            conn.commit()
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
+
+
+def update_inventory(resident_id: str, previous_name: str, row: dict) -> None:
+    if not configured():
+        return
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                INVENTORY_UPDATE_SQL,
+                (
+                    row["catalog_item"],
+                    int(row.get("quantity") or 1),
+                    bool(row.get("willing_to_lend")),
+                    row.get("condition_note") or "",
+                    resident_id,
+                    previous_name,
+                ),
+            )
+            conn.commit()
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
+
+
+def delete_inventory(resident_id: str, catalog_item: str) -> None:
+    if not configured():
+        return
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(INVENTORY_DELETE_SQL, (resident_id, catalog_item))
+            conn.commit()
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
 
 
 def update_request(request_id: str, status: str, quantity: int) -> None:

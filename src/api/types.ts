@@ -169,6 +169,8 @@ export type ApiInventoryItem = {
   catalog_item: string
   catalog_item_id: string | null
   catalog_name: string
+  category?: string
+  condition?: string
   quantity: number
   willing_to_lend: boolean
   condition_note: string
