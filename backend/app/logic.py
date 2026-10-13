@@ -545,8 +545,14 @@ def delete_shelf_item(session: Session, resident_id: str, item_id: str) -> dict:
         if snowflake_store.configured() and previous is not None:
             snowflake_store.delete_inventory_by_id(item_id)
             removed_remote = True
+        removed_local = False
         if item is not None:
             session.delete(item)
+            removed_local = True
+        for stock in _stock_replaced_by(session, resident.id, item_id, item):
+            session.delete(stock)
+            removed_local = True
+        if removed_local:
             _commit_session(session)
     except Exception:
         session.rollback()
@@ -560,6 +566,17 @@ def _shelf_name_taken(session: Session, resident_id: str, name: str, ignore_id: 
     key = name.lower()
     rows = session.exec(select(ShelfItem).where(ShelfItem.resident_id == resident_id)).all()
     return any(row.id != ignore_id and row.name.lower() == key for row in rows)
+
+
+def _stock_replaced_by(session: Session, resident_id: str, item_id: str, item: ShelfItem | None) -> list[StockRow]:
+    """Shelf edits stand in for the generated stock row they came from."""
+    name = item.name.lower() if item is not None else None
+    rows = session.exec(select(StockRow).where(StockRow.resident_id == resident_id)).all()
+    return [
+        stock
+        for stock in rows
+        if stock.id == item_id or (name is not None and stock.catalog_item.lower() == name)
+    ]
 
 
 def _stock_items(session: Session, resident_id: str | None) -> list[dict]:
@@ -1136,11 +1153,16 @@ def _available_quantity(
     window_start: datetime | None = None,
     window_end: datetime | None = None,
 ) -> tuple[int | None, int]:
+    shelves = session.exec(select(ShelfItem).where(ShelfItem.resident_id == lender_id)).all()
+    replaced_ids = {shelf.id for shelf in shelves}
+    replaced_names = {shelf.name.lower() for shelf in shelves}
     rows: list[tuple[str, int]] = []
-    for shelf in session.exec(select(ShelfItem).where(ShelfItem.resident_id == lender_id)).all():
+    for shelf in shelves:
         if shelf.available_to_lend and _lists_item(session, shelf.name, shelf.catalog_item_id, item):
             rows.append((shelf.id, shelf.quantity))
     for stock in session.exec(select(StockRow).where(StockRow.resident_id == lender_id)).all():
+        if stock.id in replaced_ids or stock.catalog_item.lower() in replaced_names:
+            continue
         if stock.willing_to_lend and _lists_item(session, stock.catalog_item, None, item):
             rows.append((stock.id, stock.quantity))
     if inventory_id:
@@ -1352,6 +1374,11 @@ def _project_dict(session: Session, project: Project) -> dict:
         neighbors = []
         if item is not None:
             resident = session.get(Resident, project.resident_id)
+            nearby = [
+                row
+                for row in view["items"]
+                if _same_city(session, project.resident_id, str(row.get("resident_id") or ""))
+            ]
             lenders = rank_lenders(
                 NeedPoint(
                     resident_id=project.resident_id,
@@ -1361,7 +1388,7 @@ def _project_dict(session: Session, project: Project) -> dict:
                     window_start=project.window_start,
                     window_end=project.window_end,
                 ),
-                [_lender_item(row) for row in view["items"]],
+                [_lender_item(row) for row in nearby],
                 DISTANCE_LIMIT,
             )
             neighbors = lenders

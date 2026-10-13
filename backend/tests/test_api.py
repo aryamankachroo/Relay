@@ -869,3 +869,68 @@ def test_separate_processes_cannot_double_book(tmp_path):
     assert sorted(codes) == [201, 409]
 
 
+def test_shelf_changes_replace_the_stock_row(client):
+    from app.models import StockRow
+
+    with session_scope() as session:
+        session.add(
+            StockRow(
+                id="jordan:drill",
+                resident_id="jordan",
+                resident_name="Jordan Lee",
+                x=2,
+                y=1,
+                catalog_item="Drill",
+                quantity=1,
+                willing_to_lend=True,
+            )
+        )
+        session.commit()
+    disabled = client.patch(
+        "/api/inventory/jordan:drill",
+        json={
+            "resident_id": "jordan",
+            "name": "Drill",
+            "category": "Tools",
+            "quantity": 0,
+            "condition": "Good",
+            "notes": "",
+            "available_to_lend": False,
+        },
+    )
+    assert disabled.status_code == 200, disabled.text
+    booked = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "avery",
+            "lender_id": "jordan",
+            "catalog_item_id": "drill",
+            "inventory_id": "jordan:drill",
+            "window_start": "2026-10-26T09:00:00",
+            "window_end": "2026-10-26T11:00:00",
+        },
+    )
+    assert booked.status_code == 404
+    removed = client.delete("/api/inventory/jordan:drill", params={"resident_id": "jordan"})
+    assert removed.status_code == 200, removed.text
+    listed = client.get("/api/inventory", params={"resident_id": "jordan"}).json()
+    assert all(row["inventory_id"] != "jordan:drill" for row in listed["items"])
+    assert all(str(row["catalog_item"]).lower() != "drill" for row in listed["items"])
+
+
+def test_project_suggestions_stay_in_the_city(client):
+    from app.models import Resident, ShelfItem
+
+    with session_scope() as session:
+        session.add(Resident(id="near-seattle", name="Seattle Neighbor", short_name="Sea", street="1 Pine", initials="SN", x=1, y=1, city="Seattle"))
+        session.add(Resident(id="near-charlotte", name="Close Neighbor", short_name="Close", street="2 Willow", initials="CN", x=2, y=1, city="Charlotte"))
+        session.add(ShelfItem(id="sea-drill", resident_id="near-seattle", name="Drill", category="Tools", quantity=1, condition="Good", available_to_lend=True, catalog_item_id="drill"))
+        session.add(ShelfItem(id="close-drill", resident_id="near-charlotte", name="Drill", category="Tools", quantity=1, condition="Good", available_to_lend=True, catalog_item_id="drill"))
+        session.commit()
+    card = _say(client, "avery", "I'm building a bookshelf this weekend.")
+    drill = next(tool for tool in card["tools"] if tool["catalog_item_id"] == "drill")
+    neighbors = {row["resident_id"] for row in drill["neighbors"]}
+    assert "near-seattle" not in neighbors
+    assert "near-charlotte" in neighbors
+
+
