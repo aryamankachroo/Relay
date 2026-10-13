@@ -8,9 +8,11 @@
     "dev:lan": "react-router dev --host",
     "build": "react-router typegen && tsc -b && react-router build",
     "lint": "eslint .",
+    "test:unit": "node --experimental-strip-types --test src/api/coverage.test.ts",
+    "test:spa": "node --test scripts/serve-client.test.mjs",
     "test:e2e": "playwright test",
-    "preview": "react-router-serve ./build/server/index.js",
-    "start": "react-router-serve ./build/server/index.js",
+    "preview": "node scripts/serve-client.mjs",
+    "start": "node scripts/serve-client.mjs",
     "ios": "npm run build && cap sync ios && cap open ios"
   },
   "dependencies": {
