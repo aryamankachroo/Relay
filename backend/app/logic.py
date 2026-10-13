@@ -20,6 +20,7 @@ from app.models import (
     Request,
     Resident,
     ShelfItem,
+    StockRow,
 )
 from app.scheduler import first_free_slot, overlaps, schedule_shared
 from app.extract import extract_message
@@ -364,7 +365,7 @@ def inventory_view(session: Session, resident_id: str | None = None) -> dict:
     local = _local_inventory(session, resident_id)
     raw = snowflake_store.fetch_inventory()
     if raw["snowflake"] != "ok":
-        payload = {"snowflake": raw["snowflake"], "items": local}
+        payload = {"snowflake": raw["snowflake"], "items": _merge_items(_stock_items(session, resident_id), local)}
         if raw.get("snowflake_message"):
             payload["snowflake_message"] = raw["snowflake_message"]
         return payload
@@ -474,6 +475,35 @@ def _shelf_name_taken(session: Session, resident_id: str, name: str, ignore_id: 
     return any(row.id != ignore_id and row.name.lower() == key for row in rows)
 
 
+def _stock_items(session: Session, resident_id: str | None) -> list[dict]:
+    query = select(StockRow)
+    if resident_id is not None:
+        query = query.where(StockRow.resident_id == resident_id)
+    catalog = _catalog(session)
+    return [_inventory_item(_stock_dict(row), _match_label(row.catalog_item, catalog)) for row in session.exec(query).all()]
+
+
+def _stock_dict(row: StockRow) -> dict:
+    return {
+        "inventory_id": row.id,
+        "resident_id": row.resident_id,
+        "resident_name": row.resident_name,
+        "x": row.x,
+        "y": row.y,
+        "catalog_item": row.catalog_item,
+        "quantity": row.quantity,
+        "willing_to_lend": row.willing_to_lend,
+        "condition_note": row.condition_note,
+    }
+
+
+def _merge_items(base: list[dict], overlay: list[dict]) -> list[dict]:
+    seen = {(row["resident_id"], str(row["catalog_item"]).lower()) for row in overlay}
+    return overlay + [
+        row for row in base if (row["resident_id"], str(row["catalog_item"]).lower()) not in seen
+    ]
+
+
 def _local_inventory(session: Session, resident_id: str | None) -> list[dict]:
     query = select(ShelfItem)
     if resident_id is not None:
@@ -543,8 +573,6 @@ def _mirror_inventory(resident: Resident, item: ShelfItem, previous_name: str | 
 def neighborhood(session: Session, resident_id: str) -> dict:
     resident = _resident(session, resident_id)
     view = inventory_view(session)
-    if view["snowflake"] != "ok":
-        return view
     items = []
     for row in view["items"]:
         if row["resident_id"] == resident.id or not row["willing_to_lend"]:
@@ -554,7 +582,7 @@ def neighborhood(session: Session, resident_id: str) -> dict:
             continue
         items.append({**row, "distance": distance})
     items.sort(key=lambda row: (row["distance"], row["resident_name"]))
-    return {"snowflake": "ok", "resident_id": resident.id, "items": items}
+    return {"snowflake": view["snowflake"], "resident_id": resident.id, "items": items}
 
 
 def activity(session: Session, resident_id: str | None) -> dict:

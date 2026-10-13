@@ -3,7 +3,8 @@ import json
 from sqlmodel import Session, select
 
 from app.config import AVERY_ID
-from app.models import CatalogItem, Resident
+from app.dataset import inventory_rows, resident_rows
+from app.models import CatalogItem, Resident, StockRow
 
 CATALOG = (
     {
@@ -184,14 +185,55 @@ def seed(session: Session) -> None:
                 )
             )
     session.commit()
+    _seed_stock(session)
+
+
+def _seed_stock(session: Session) -> None:
+    if session.exec(select(StockRow)).first() is not None:
+        return
+    rows = inventory_rows()
+    known = {row.id for row in session.exec(select(Resident)).all()}
+    for person in resident_rows(rows):
+        if person["id"] in known:
+            continue
+        session.add(
+            Resident(
+                id=person["id"],
+                name=person["name"],
+                short_name=person["name"].split()[0],
+                street=f"{person['id']} Willow Court",
+                initials=initials_for(person["name"]),
+                x=person["x"],
+                y=person["y"],
+            )
+        )
+    session.add_all(
+        [
+            StockRow(
+                id=f"{row['resident_id']}:{row['catalog_item']}",
+                resident_id=row["resident_id"],
+                resident_name=row["resident_name"],
+                x=row["x"],
+                y=row["y"],
+                catalog_item=row["catalog_item"],
+                quantity=row["quantity"],
+                willing_to_lend=row["willing_to_lend"],
+                condition_note=row["condition_note"],
+            )
+            for row in rows
+        ]
+    )
+    session.commit()
 
 
 def ensure_extra_inventory() -> None:
-    """Add the newer inventory rows to Snowflake when that warehouse is configured."""
-    from app.snowflake_store import SnowflakeError, insert_inventory_if_missing
+    """Upload the load-test inventory once Snowflake is configured and still small."""
+    from app.snowflake_store import SnowflakeError, count_inventory, insert_inventory_many
 
-    for row in EXTRA_INVENTORY:
-        try:
-            insert_inventory_if_missing(row)
-        except SnowflakeError:
+    try:
+        current = count_inventory()
+        if current is None or current >= len(inventory_rows()):
             return
+        insert_inventory_many(inventory_rows())
+    except SnowflakeError:
+        return

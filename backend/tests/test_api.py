@@ -244,11 +244,16 @@ def test_backboard_then_regex_fallback(client, monkeypatch):
     assert card["type"] == "tool_list"
 
 
-def test_my_stuff_and_neighborhood_are_empty_without_snowflake(client):
+def test_local_dataset_covers_heavy_inventory(client):
     stuff = client.get("/api/my-stuff").json()
     assert stuff["resident"]["name"] == "Avery Moss"
     assert stuff["inventory"]["snowflake"] == "not_configured"
     assert stuff["inventory"]["items"] == []
     block = client.get("/api/neighborhood").json()
     assert block["snowflake"] == "not_configured"
-    assert block["items"] == []
+    assert block["items"]
+    assert all(row["distance"] <= 25 for row in block["items"])
+    assert all(row["catalog_item"] != "Drill" for row in block["items"])
+    everyone = client.get("/api/inventory").json()
+    assert everyone["snowflake"] == "not_configured"
+    assert len(everyone["items"]) >= 5000

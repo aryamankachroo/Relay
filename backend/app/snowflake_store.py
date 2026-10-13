@@ -240,6 +240,48 @@ WHERE RESIDENT_ID = %s AND CATALOG_ITEM = %s
 """
 
 
+def count_inventory() -> int | None:
+    if not configured():
+        return None
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM INVENTORY")
+            row = cursor.fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
+
+
+def insert_inventory_many(rows: list[dict], batch_size: int = 200) -> None:
+    if not configured() or not rows:
+        return
+    payload = [
+        (
+            row["resident_id"],
+            row["resident_name"],
+            row.get("x") or 0,
+            row.get("y") or 0,
+            row["catalog_item"],
+            int(row.get("quantity") or 1),
+            bool(row.get("willing_to_lend", True)),
+            row.get("condition_note") or "",
+            json.dumps(row.get("available_windows") or []),
+            row["resident_id"],
+            row["catalog_item"],
+        )
+        for row in rows
+    ]
+    try:
+        with _connect() as conn:
+            cursor = conn.cursor()
+            for start in range(0, len(payload), batch_size):
+                cursor.executemany(INVENTORY_INSERT_SQL, payload[start : start + batch_size])
+            conn.commit()
+    except Exception as exc:
+        raise SnowflakeError(str(exc)) from exc
+
+
 def insert_inventory_if_missing(row: dict) -> None:
     if not configured():
         return

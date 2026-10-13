@@ -110,3 +110,17 @@ class ShelfItem(SQLModel, table=True):
     condition: str = ""
     notes: str = ""
     available_to_lend: bool = True
+
+
+class StockRow(SQLModel, table=True):
+    """Generated inventory used when Snowflake is not the source of truth."""
+
+    id: str = Field(primary_key=True)
+    resident_id: str
+    resident_name: str
+    x: float = 0
+    y: float = 0
+    catalog_item: str
+    quantity: int = 1
+    willing_to_lend: bool = True
+    condition_note: str = ""
