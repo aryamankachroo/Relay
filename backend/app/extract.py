@@ -1,8 +1,10 @@
 import json
 import logging
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from time import monotonic
 
 from app.clock import aware, now as utcnow
 
@@ -13,6 +15,33 @@ from app.models import CatalogItem
 log = logging.getLogger(__name__)
 
 GEMINI_ATTEMPTS = 2
+EXTRACTION_DEADLINE_SECONDS = 8.0
+_deadline: ContextVar[float | None] = ContextVar("extraction_deadline", default=None)
+
+EXTRACTION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["intent", "items", "window_start", "window_end", "area"],
+    "properties": {
+        "intent": {"type": "string", "enum": ["project", "need", "offer"]},
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "quantity"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "quantity": {"type": "integer"},
+                    "optional": {"type": "boolean"},
+                },
+            },
+        },
+        "window_start": {"type": ["string", "null"]},
+        "window_end": {"type": ["string", "null"]},
+        "area": {"type": ["string", "null"]},
+    },
+}
 MAX_PROJECT_TOOLS = 8
 MAX_TOOL_NAME = 40
 CONFIRM_YES = {"yes", "y", "confirm", "ok", "okay", "accept", "yep", "yeah"}
@@ -39,18 +68,34 @@ class Extraction:
     extra_names: list[str] = field(default_factory=list)
 
 
-def extract_message(text: str, catalog: list[CatalogItem], now: datetime | None = None) -> Extraction:
+def extract_message(
+    text: str,
+    catalog: list[CatalogItem],
+    now: datetime | None = None,
+    deadline_seconds: float = EXTRACTION_DEADLINE_SECONDS,
+) -> Extraction:
     moment = now or utcnow()
     answer = _yes_no(text)
     if answer is not None:
         return answer
-    gemini = _from_gemini(text, catalog, moment)
-    if gemini is not None:
-        return gemini
-    backboard = _from_backboard(text, catalog, moment)
-    if backboard is not None:
-        return backboard
-    return _fallback(text, catalog, moment)
+    token = _deadline.set(monotonic() + deadline_seconds)
+    try:
+        gemini = _from_gemini(text, catalog, moment) if _remaining() > 0 else None
+        if gemini is not None:
+            return gemini
+        backboard = _from_backboard(text, catalog, moment) if _remaining() > 0 else None
+        if backboard is not None:
+            return backboard
+        return _fallback(text, catalog, moment)
+    finally:
+        _deadline.reset(token)
+
+
+def _remaining() -> float:
+    deadline = _deadline.get()
+    if deadline is None:
+        return EXTRACTION_DEADLINE_SECONDS
+    return deadline - monotonic()
 
 
 def _yes_no(text: str) -> Extraction | None:
@@ -85,24 +130,26 @@ def _fallback(text: str, catalog: list[CatalogItem], now: datetime) -> Extractio
     return Extraction("unknown", [], 1, None, None, None)
 
 
-def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction | None:
-    key = gemini_api_key()
-    if not key:
-        return None
+def _prompt(text: str, catalog: list[CatalogItem]) -> str:
     names = ", ".join(item.name for item in catalog)
-    prompt = (
-        "Turn this neighborhood-sharing message into JSON only. "
-        "intent is project, need, or offer. "
+    return (
+        "Turn this neighborhood-sharing message into JSON matching this schema exactly. "
+        f"{json.dumps(EXTRACTION_SCHEMA)} "
         f"The catalog is: {names}. "
         "For a need or offer, name only items from the catalog. "
         f"For a project, list the tools the job needs, at most {MAX_PROJECT_TOOLS}: "
         "use the exact catalog name when the tool is in the catalog, "
         "otherwise a short plain tool name. "
         "Use null for unknown window or area. quantity is a positive integer.\n"
-        '{"intent":"need","items":[{"name":"Notebooks","quantity":20,"optional":false}],'
-        '"window_start":null,"window_end":null,"area":null}\n'
         f"Message: {text}"
     )
+
+
+def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction | None:
+    key = gemini_api_key()
+    if not key or _remaining() <= 0:
+        return None
+    prompt = _prompt(text, catalog)
     try:
         from google import genai
 
@@ -111,40 +158,35 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
         log.warning("Gemini client failed: %s: %s", type(exc).__name__, exc)
         return None
     for attempt in range(1, GEMINI_ATTEMPTS + 1):
+        if _remaining() <= 0:
+            log.warning("Gemini skipped because the extraction deadline was exhausted")
+            return None
         try:
             response = client.models.generate_content(
                 model=gemini_model(),
                 contents=prompt,
-                config={"response_mime_type": "application/json"},
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": EXTRACTION_SCHEMA,
+                },
             )
         except Exception as exc:
             log.warning("Gemini attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
             continue
         payload = _parse_json(response.text or "")
         if isinstance(payload, dict):
-            return _extraction_from_payload(payload, text, catalog, now)
+            parsed = _extraction_from_payload(payload, text, catalog, now)
+            if parsed is not None:
+                return parsed
         log.warning("Gemini attempt %d gave an unparseable reply: %.200r", attempt, response.text)
     return None
 
 
 def _from_backboard(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction | None:
     key = backboard_api_key()
-    if not key:
+    if not key or _remaining() <= 0:
         return None
-    names = ", ".join(item.name for item in catalog)
-    prompt = (
-        "Turn this neighborhood-sharing message into JSON only. "
-        "intent is project, need, or offer. "
-        f"The catalog is: {names}. "
-        "For a need or offer, name only items from the catalog. "
-        f"For a project, list the tools the job needs, at most {MAX_PROJECT_TOOLS}: "
-        "use the exact catalog name when the tool is in the catalog, "
-        "otherwise a short plain tool name. "
-        "Use null for unknown window or area. quantity is a positive integer.\n"
-        '{"intent":"need","items":[{"name":"Notebooks","quantity":20,"optional":false}],'
-        '"window_start":null,"window_end":null,"area":null}\n'
-        f"Message: {text}"
-    )
+    prompt = _prompt(text, catalog)
     try:
         import httpx
 
@@ -158,7 +200,7 @@ def _from_backboard(text: str, catalog: list[CatalogItem], now: datetime) -> Ext
                 "stream": False,
                 "memory": "off",
             },
-            timeout=20,
+            timeout=max(_remaining(), 0.001),
         )
         response.raise_for_status()
         body = response.json()
@@ -181,10 +223,12 @@ def _extraction_from_payload(
     intent = payload.get("intent")
     if intent not in {"project", "need", "offer"}:
         return None
+    if not set(payload).issubset(set(EXTRACTION_SCHEMA["required"])):
+        return None
     item_ids: list[str] = []
     extra_names: list[str] = []
     quantity = 1
-    raw_items = payload.get("items") or []
+    raw_items = payload.get("items")
     if not isinstance(raw_items, list):
         return None
     for entry in raw_items:
@@ -209,8 +253,12 @@ def _extraction_from_payload(
         extra_names = extra_names[:room]
     if not item_ids and not extra_names:
         return None
-    start = aware(_parse_optional_dt(payload.get("window_start")))
-    end = aware(_parse_optional_dt(payload.get("window_end")))
+    start, start_ok = _strict_moment(payload.get("window_start"))
+    end, end_ok = _strict_moment(payload.get("window_end"))
+    if not start_ok or not end_ok:
+        return None
+    if start is not None and end is not None and end <= start:
+        return None
     if start is None or end is None:
         start, end = _window(text, now)
     area = payload.get("area")
@@ -239,6 +287,15 @@ def _parse_json(text: str) -> dict | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _strict_moment(value) -> tuple[datetime | None, bool]:
+    if value is None or value == "":
+        return None, True
+    parsed = aware(_parse_optional_dt(value))
+    if parsed is None:
+        return None, False
+    return parsed, True
 
 
 def _parse_optional_dt(value) -> datetime | None:

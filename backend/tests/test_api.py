@@ -382,7 +382,7 @@ def test_backboard_http_errors_fall_through_to_regex(client, monkeypatch):
     card = _say(client, "avery", "I need 20 notebooks Saturday morning")
     assert card["type"] == "confirmation"
     assert calls[0]["url"] == "https://app.backboard.io/api/threads/messages"
-    assert calls[0]["timeout"] == 20
+    assert 0 < calls[0]["timeout"] <= 8
     assert calls[0]["key"] == "test-key"
 
     def malformed(url, headers=None, json=None, timeout=None):
@@ -932,5 +932,143 @@ def test_project_suggestions_stay_in_the_city(client):
     neighbors = {row["resident_id"] for row in drill["neighbors"]}
     assert "near-seattle" not in neighbors
     assert "near-charlotte" in neighbors
+
+
+def test_failed_recovery_is_retried_after_a_timeout(client, monkeypatch):
+    from app.logic import retry_reconciliations
+    from app.models import Reconciliation
+
+    store = {
+        "remote-drill": {
+            "inventory_id": "remote-drill",
+            "resident_id": "avery",
+            "resident_name": "Avery Moss",
+            "catalog_item": "Drill",
+            "quantity": 1,
+            "willing_to_lend": True,
+            "condition_note": "",
+            "x": 0,
+            "y": 0,
+            "category": "Tools",
+            "condition": "Good",
+        }
+    }
+    calls = {"n": 0}
+
+    def upsert(row):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise TimeoutError("snowflake timed out")
+        store[row["inventory_id"]] = dict(row)
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert)
+    monkeypatch.setattr(
+        "app.logic.snowflake_store.fetch_inventory_row",
+        lambda item_id: dict(store[item_id]) if item_id in store else None,
+    )
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", lambda item_id: store.pop(item_id, None))
+    with pytest.raises(TimeoutError, match="snowflake timed out"):
+        client.patch(
+            "/api/inventory/remote-drill",
+            json={
+                "resident_id": "avery",
+                "name": "Drill",
+                "category": "Tools",
+                "quantity": 2,
+                "condition": "Good",
+                "notes": "",
+                "available_to_lend": True,
+            },
+        )
+    with session_scope() as session:
+        queued = session.exec(select(Reconciliation)).all()
+        assert len(queued) == 1
+        assert queued[0].action == "restore"
+        assert queued[0].last_error == "TimeoutError"
+        retry_reconciliations(session)
+        assert session.exec(select(Reconciliation)).all() == []
+    assert store["remote-drill"]["catalog_item"] == "Drill"
+    assert store["remote-drill"]["quantity"] == 1
+
+    def commit_fails(_session):
+        phase["commit"] = True
+        raise RuntimeError("sqlite failed")
+
+    phase = {"commit": False}
+
+    def upsert_until_commit(row):
+        if phase["commit"]:
+            raise TimeoutError("restore timed out")
+        store[row["inventory_id"]] = dict(row)
+
+    monkeypatch.setattr("app.logic._commit_session", commit_fails)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert_until_commit)
+    with pytest.raises(RuntimeError, match="sqlite failed"):
+        client.patch(
+            "/api/inventory/remote-drill",
+            json={
+                "resident_id": "avery",
+                "name": "Drill",
+                "category": "Tools",
+                "quantity": 3,
+                "condition": "Good",
+                "notes": "",
+                "available_to_lend": True,
+            },
+        )
+    with session_scope() as session:
+        queued = session.exec(select(Reconciliation)).all()
+        assert len(queued) == 1
+        assert queued[0].action == "restore"
+        assert queued[0].last_error == "TimeoutError"
+
+
+def test_extraction_schema_rejects_bad_payloads_and_stops_at_the_deadline(client, monkeypatch):
+    from app.extract import _extraction_from_payload, extract_message
+
+    catalog = _catalog()
+    moment = utcnow()
+    valid = {
+        "intent": "need",
+        "items": [{"name": "Notebooks", "quantity": 20}],
+        "window_start": None,
+        "window_end": None,
+        "area": None,
+    }
+    assert _extraction_from_payload(valid, "I need notebooks", catalog, moment).item_ids == ["notebooks"]
+    assert _extraction_from_payload({**valid, "window_start": "not-a-date"}, "I need notebooks", catalog, moment) is None
+    assert _extraction_from_payload({"intent": "need", "items": "notebooks"}, "I need notebooks", catalog, moment) is None
+
+    import app.extract as extract
+
+    calls = []
+
+    def backboard(*_args, **_kwargs):
+        calls.append("backboard")
+        raise AssertionError("Backboard should not run after the deadline")
+
+    original_backboard = extract._from_backboard
+    monkeypatch.setattr("app.extract.gemini_api_key", lambda: "test-key")
+    monkeypatch.setattr("app.extract.backboard_api_key", lambda: "test-key")
+    monkeypatch.setattr("app.extract._from_backboard", backboard)
+    parsed = extract_message("I need 20 notebooks Saturday", catalog, deadline_seconds=0)
+    assert calls == []
+    assert parsed.intent == "need"
+    assert parsed.item_ids == ["notebooks"]
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"content": '{"intent":"need","items":[{"name":"Notebooks","quantity":20}],"window_start":null,"window_end":null,"area":null}'}
+
+    monkeypatch.setattr("app.extract._from_gemini", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.extract._from_backboard", original_backboard)
+    monkeypatch.setattr("httpx.post", lambda *_args, **_kwargs: Response())
+    live = extract_message("I need 20 notebooks Saturday", catalog)
+    assert live.intent == "need"
+    assert live.quantity == 20
 
 
