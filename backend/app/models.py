@@ -127,3 +127,15 @@ class StockRow(SQLModel, table=True):
     quantity: int = 1
     willing_to_lend: bool = True
     condition_note: str = ""
+
+
+class Reconciliation(SQLModel, table=True):
+    """A Snowflake restore or delete that still needs to be retried."""
+
+    id: str = Field(primary_key=True)
+    action: str
+    inventory_id: str
+    payload: str = ""
+    attempts: int = 0
+    last_error: str = ""
+    created_at: datetime

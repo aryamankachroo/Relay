@@ -114,6 +114,9 @@ async def lifespan(_app: FastAPI):
         pass
     with session_scope() as session:
         seed(session)
+        from app.logic import retry_reconciliations
+
+        retry_reconciliations(session)
     ensure_extra_inventory()
     yield
 

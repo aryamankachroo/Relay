@@ -22,6 +22,7 @@ from app.models import (
     Loan,
     Project,
     ProjectTool,
+    Reconciliation,
     Request,
     Resident,
     ShelfItem,
@@ -540,11 +541,11 @@ def delete_shelf_item(session: Session, resident_id: str, item_id: str) -> dict:
         raise HTTPException(status_code=403, detail="That item belongs to someone else.")
     item = session.get(ShelfItem, item_id)
     previous = snowflake_store.fetch_inventory_row(item_id)
-    removed_remote = False
+    remote_attempted = False
     try:
         if snowflake_store.configured() and previous is not None:
+            remote_attempted = True
             snowflake_store.delete_inventory_by_id(item_id)
-            removed_remote = True
         removed_local = False
         if item is not None:
             session.delete(item)
@@ -556,8 +557,8 @@ def delete_shelf_item(session: Session, resident_id: str, item_id: str) -> dict:
             _commit_session(session)
     except Exception:
         session.rollback()
-        if removed_remote and previous is not None:
-            snowflake_store.upsert_inventory(previous)
+        if remote_attempted and previous is not None:
+            _compensate_remote(session, item_id, previous, created=False)
         raise
     return {"deleted": item_id}
 
@@ -663,18 +664,71 @@ def _save_shelf(session: Session, resident: Resident, item: ShelfItem, created: 
     previous = snowflake_store.fetch_inventory_row(item.id)
     if isinstance(previous, dict):
         previous = dict(previous)
-    mirrored = False
+    attempted = False
     try:
         session.flush()
-        mirrored = _mirror_inventory(resident, item)
+        if snowflake_store.configured():
+            attempted = True
+            _mirror_inventory(resident, item)
         _commit_session(session)
     except Exception:
         session.rollback()
-        if mirrored and previous is not None:
-            snowflake_store.upsert_inventory(previous)
-        elif mirrored and created and previous is None:
-            snowflake_store.delete_inventory_by_id(item.id)
+        if attempted:
+            _compensate_remote(session, item.id, previous, created)
         raise
+
+
+def _compensate_remote(session: Session, item_id: str, previous: dict | None, created: bool) -> None:
+    """Put Snowflake back, and remember the job when that write also fails."""
+    action = "restore" if previous is not None else "delete" if created else ""
+    if not action:
+        return
+    try:
+        if action == "restore" and previous is not None:
+            snowflake_store.upsert_inventory(previous)
+            return
+        snowflake_store.delete_inventory_by_id(item_id)
+    except Exception as exc:
+        _queue_reconciliation(session, action, item_id, previous, exc)
+
+
+def _queue_reconciliation(
+    session: Session,
+    action: str,
+    item_id: str,
+    previous: dict | None,
+    exc: Exception,
+) -> None:
+    session.add(
+        Reconciliation(
+            id=uuid4().hex,
+            action=action,
+            inventory_id=item_id,
+            payload=json.dumps(previous) if previous is not None else "",
+            attempts=1,
+            last_error=type(exc).__name__,
+            created_at=now(),
+        )
+    )
+    session.commit()
+
+
+def retry_reconciliations(session: Session) -> None:
+    rows = session.exec(select(Reconciliation)).all()
+    for row in rows:
+        try:
+            if row.action == "restore":
+                snowflake_store.upsert_inventory(json.loads(row.payload))
+            elif row.action == "delete":
+                snowflake_store.delete_inventory_by_id(row.inventory_id)
+            else:
+                continue
+            session.delete(row)
+        except Exception as exc:
+            row.attempts += 1
+            row.last_error = type(exc).__name__
+            session.add(row)
+    session.commit()
 
 
 def _label_for_id(session: Session, resident_id: str, item_id: str) -> str | None:
