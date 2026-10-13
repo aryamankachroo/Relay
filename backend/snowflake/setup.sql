@@ -80,7 +80,14 @@ FROM (VALUES
     ('priya',  'Priya Shah',    6, 4, 'Quick grip clamps', 2,  TRUE,  '12 inch, one-handed',             'open'),
     ('elena',  'Elena Brooks',  8, 2, 'Circular saw',      1,  TRUE,  'Cordless, 6 1/2 inch blade',      'open'),
     ('elena',  'Elena Brooks',  8, 2, 'Notebooks',         10, TRUE,  'Composition books, unused',       'open'),
-    ('noor',   'Noor Haddad',   40, 0, 'Cordless drill',   1,  TRUE,  'Two batteries and a charger',     'open')
+    ('noor',   'Noor Haddad',   40, 0, 'Cordless drill',   1,  TRUE,  'Two batteries and a charger',     'open'),
+    ('luis',   'Luis Alvarez',  7, 3, 'Garden hose',      1,  TRUE,  '50 ft, brass fittings',           'open'),
+    ('luis',   'Luis Alvarez',  7, 3, 'Soccer ball',      2,  TRUE,  'Size 5, one scuffed',             'open'),
+    ('nia',    'Nia Patel',     2, 5, 'Folding table',    1,  TRUE,  '6 ft, seats eight',               'open'),
+    ('nia',    'Nia Patel',     2, 5, 'Mixing bowl',      3,  TRUE,  'Stainless, nested set',           'open'),
+    ('owen',   'Owen Blake',    1, 2, 'Extension cord',   1,  TRUE,  '25 ft, outdoor rated',            'open'),
+    ('owen',   'Owen Blake',    1, 2, 'Hedge trimmer',    1,  TRUE,  'Corded, sharp',                   'open'),
+    ('maya',   'Maya Chen',     1, 4, 'Garden hose',      1,  TRUE,  '25 ft, nozzle included',          'open')
 ) v
 CROSS JOIN (
     SELECT

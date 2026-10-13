@@ -70,6 +70,54 @@ CATALOG = (
         "demo_price_cents": 8000,
         "default_loan_hours": 4,
     },
+    {
+        "id": "hose",
+        "name": "Garden hose",
+        "aliases": ["hose", "garden hose"],
+        "category": "garden",
+        "demo_price_cents": 2500,
+        "default_loan_hours": 8,
+    },
+    {
+        "id": "extension-cord",
+        "name": "Extension cord",
+        "aliases": ["extension cord", "power cord"],
+        "category": "household",
+        "demo_price_cents": 1800,
+        "default_loan_hours": 8,
+    },
+    {
+        "id": "folding-table",
+        "name": "Folding table",
+        "aliases": ["folding table", "banquet table"],
+        "category": "household",
+        "demo_price_cents": 5000,
+        "default_loan_hours": 24,
+    },
+    {
+        "id": "soccer-ball",
+        "name": "Soccer ball",
+        "aliases": ["soccer ball", "football"],
+        "category": "sports",
+        "demo_price_cents": 2000,
+        "default_loan_hours": 4,
+    },
+    {
+        "id": "mixing-bowl",
+        "name": "Mixing bowl",
+        "aliases": ["mixing bowl", "bowl"],
+        "category": "kitchen",
+        "demo_price_cents": 1500,
+        "default_loan_hours": 8,
+    },
+    {
+        "id": "hedge-trimmer",
+        "name": "Hedge trimmer",
+        "aliases": ["hedge trimmer", "trimmer"],
+        "category": "garden",
+        "demo_price_cents": 7000,
+        "default_loan_hours": 4,
+    },
 )
 
 
@@ -83,6 +131,20 @@ NEIGHBORS = (
     {"id": "chris", "name": "Chris Nguyen", "short_name": "Chris", "street": "22 Willow Court", "x": 4, "y": 1},
     {"id": "priya", "name": "Priya Shah", "short_name": "Priya", "street": "9 Willow Court", "x": 6, "y": 4},
     {"id": "elena", "name": "Elena Brooks", "short_name": "Elena", "street": "25 Willow Court", "x": 8, "y": 2},
+    {"id": "luis", "name": "Luis Alvarez", "short_name": "Luis", "street": "11 Willow Court", "x": 7, "y": 3},
+    {"id": "nia", "name": "Nia Patel", "short_name": "Nia", "street": "4 Oak Lane", "x": 2, "y": 5},
+    {"id": "owen", "name": "Owen Blake", "short_name": "Owen", "street": "7 Willow Court", "x": 1, "y": 2},
+)
+
+# Extra shared inventory. Nobody new owns a drill, so the shared-purchase demo stays intact.
+EXTRA_INVENTORY = (
+    {"resident_id": "luis", "resident_name": "Luis Alvarez", "x": 7, "y": 3, "catalog_item": "Garden hose", "quantity": 1, "willing_to_lend": True, "condition_note": "50 ft, brass fittings"},
+    {"resident_id": "luis", "resident_name": "Luis Alvarez", "x": 7, "y": 3, "catalog_item": "Soccer ball", "quantity": 2, "willing_to_lend": True, "condition_note": "Size 5, one scuffed"},
+    {"resident_id": "nia", "resident_name": "Nia Patel", "x": 2, "y": 5, "catalog_item": "Folding table", "quantity": 1, "willing_to_lend": True, "condition_note": "6 ft, seats eight"},
+    {"resident_id": "nia", "resident_name": "Nia Patel", "x": 2, "y": 5, "catalog_item": "Mixing bowl", "quantity": 3, "willing_to_lend": True, "condition_note": "Stainless, nested set"},
+    {"resident_id": "owen", "resident_name": "Owen Blake", "x": 1, "y": 2, "catalog_item": "Extension cord", "quantity": 1, "willing_to_lend": True, "condition_note": "25 ft, outdoor rated"},
+    {"resident_id": "owen", "resident_name": "Owen Blake", "x": 1, "y": 2, "catalog_item": "Hedge trimmer", "quantity": 1, "willing_to_lend": True, "condition_note": "Corded, sharp"},
+    {"resident_id": "maya", "resident_name": "Maya Chen", "x": 1, "y": 4, "catalog_item": "Garden hose", "quantity": 1, "willing_to_lend": True, "condition_note": "25 ft, nozzle included"},
 )
 
 
@@ -109,8 +171,8 @@ def seed(session: Session) -> None:
     for row in NEIGHBORS:
         if session.get(Resident, row["id"]) is None:
             session.add(Resident(**row, initials=initials_for(row["name"])))
-    if session.exec(select(CatalogItem)).first() is None:
-        for row in CATALOG:
+    for row in CATALOG:
+        if session.get(CatalogItem, row["id"]) is None:
             session.add(
                 CatalogItem(
                     id=row["id"],
@@ -122,3 +184,14 @@ def seed(session: Session) -> None:
                 )
             )
     session.commit()
+
+
+def ensure_extra_inventory() -> None:
+    """Add the newer inventory rows to Snowflake when that warehouse is configured."""
+    from app.snowflake_store import SnowflakeError, insert_inventory_if_missing
+
+    for row in EXTRA_INVENTORY:
+        try:
+            insert_inventory_if_missing(row)
+        except SnowflakeError:
+            return
