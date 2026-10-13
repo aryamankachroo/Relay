@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -152,33 +153,42 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
     prompt = _prompt(text, catalog)
     try:
         from google import genai
-
-        client = genai.Client(api_key=key)
     except Exception as exc:
         log.warning("Gemini client failed: %s: %s", type(exc).__name__, exc)
         return None
     for attempt in range(1, GEMINI_ATTEMPTS + 1):
-        if _remaining() <= 0:
+        remaining = _remaining()
+        if remaining <= 0:
             log.warning("Gemini skipped because the extraction deadline was exhausted")
             return None
         try:
-            response = client.models.generate_content(
-                model=gemini_model(),
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": EXTRACTION_SCHEMA,
-                },
+            client = genai.Client(
+                api_key=key,
+                http_options={"timeout": max(1, int(remaining * 1000))},
+            )
+            response = _call_within_budget(
+                lambda: client.models.generate_content(
+                    model=gemini_model(),
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": EXTRACTION_SCHEMA,
+                    },
+                ),
+                remaining,
             )
         except Exception as exc:
             log.warning("Gemini attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
             continue
+        if response is None or _remaining() <= 0:
+            log.warning("Gemini reply arrived after the extraction deadline")
+            return None
         payload = _parse_json(response.text or "")
         if isinstance(payload, dict):
             parsed = _extraction_from_payload(payload, text, catalog, now)
             if parsed is not None:
                 return parsed
-        log.warning("Gemini attempt %d gave an unparseable reply: %.200r", attempt, response.text)
+        log.warning("Gemini attempt %d gave an unparseable reply: %.200r", attempt, getattr(response, "text", ""))
     return None
 
 
@@ -207,6 +217,9 @@ def _from_backboard(text: str, catalog: list[CatalogItem], now: datetime) -> Ext
     except Exception as exc:
         log.warning("Backboard failed: %s: %s", type(exc).__name__, exc)
         return None
+    if _remaining() <= 0:
+        log.warning("Backboard reply arrived after the extraction deadline")
+        return None
     raw = body.get("content") if isinstance(body, dict) else None
     if not isinstance(raw, str):
         raw = body.get("message") if isinstance(body, dict) else None
@@ -217,14 +230,61 @@ def _from_backboard(text: str, catalog: list[CatalogItem], now: datetime) -> Ext
     return None
 
 
+def _call_within_budget(call, seconds: float):
+    """Run a provider call, and ignore it when it outlives the deadline."""
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(call)
+    try:
+        return future.result(timeout=max(seconds, 0.001))
+    except TimeoutError:
+        return None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _matches_schema(value, schema: dict) -> bool:
+    expected = schema.get("type")
+    if isinstance(expected, list):
+        if value is None and "null" in expected:
+            return True
+        expected = next((kind for kind in expected if kind != "null"), None)
+    if expected == "object":
+        if not isinstance(value, dict):
+            return False
+        properties = schema.get("properties") or {}
+        required = schema.get("required") or []
+        if any(key not in value for key in required):
+            return False
+        if schema.get("additionalProperties") is False and any(key not in properties for key in value):
+            return False
+        return all(key not in properties or _matches_schema(item, properties[key]) for key, item in value.items())
+    if expected == "array":
+        if not isinstance(value, list):
+            return False
+        item_schema = schema.get("items")
+        return item_schema is None or all(_matches_schema(item, item_schema) for item in value)
+    if expected == "string":
+        matches = isinstance(value, str)
+    elif expected == "integer":
+        matches = isinstance(value, int) and not isinstance(value, bool)
+    elif expected == "boolean":
+        matches = isinstance(value, bool)
+    elif expected == "null":
+        matches = value is None
+    else:
+        matches = False
+    if not matches:
+        return False
+    allowed = schema.get("enum")
+    return allowed is None or value in allowed
+
+
 def _extraction_from_payload(
     payload: dict, text: str, catalog: list[CatalogItem], now: datetime
 ) -> Extraction | None:
-    intent = payload.get("intent")
-    if intent not in {"project", "need", "offer"}:
+    if not _matches_schema(payload, EXTRACTION_SCHEMA):
         return None
-    if not set(payload).issubset(set(EXTRACTION_SCHEMA["required"])):
-        return None
+    intent = payload["intent"]
     item_ids: list[str] = []
     extra_names: list[str] = []
     quantity = 1

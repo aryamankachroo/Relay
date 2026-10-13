@@ -39,7 +39,15 @@ def _catalog():
 def test_project_payload_keeps_tools_outside_the_catalog(client):
     payload = {
         "intent": "project",
-        "items": [{"name": "Socket set"}, {"name": "Drill"}, {"name": "socket  set"}, {"name": "Car jack"}],
+        "items": [
+            {"name": "Socket set", "quantity": 1},
+            {"name": "Drill", "quantity": 1},
+            {"name": "socket  set", "quantity": 1},
+            {"name": "Car jack", "quantity": 1},
+        ],
+        "window_start": None,
+        "window_end": None,
+        "area": None,
     }
     extraction = _extraction_from_payload(payload, "building a car", _catalog(), utcnow())
     assert extraction.intent == "project"
@@ -48,7 +56,13 @@ def test_project_payload_keeps_tools_outside_the_catalog(client):
 
 
 def test_need_payload_ignores_tools_outside_the_catalog(client):
-    payload = {"intent": "need", "items": [{"name": "Socket set"}]}
+    payload = {
+        "intent": "need",
+        "items": [{"name": "Socket set", "quantity": 1}],
+        "window_start": None,
+        "window_end": None,
+        "area": None,
+    }
     assert _extraction_from_payload(payload, "I need a socket set", _catalog(), utcnow()) is None
 
 
@@ -1024,6 +1038,37 @@ def test_failed_recovery_is_retried_after_a_timeout(client, monkeypatch):
         assert queued[0].last_error == "TimeoutError"
 
 
+def test_unconfigured_snowflake_keeps_the_reconciliation_job(client, monkeypatch):
+    from app.logic import retry_reconciliations
+    from app.models import Reconciliation
+
+    calls = []
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: False)
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", lambda item_id: calls.append(item_id))
+    with session_scope() as session:
+        session.add(
+            Reconciliation(
+                id="job-1",
+                action="delete",
+                inventory_id="remote-drill",
+                payload="",
+                attempts=1,
+                last_error="TimeoutError",
+                created_at=utcnow(),
+            )
+        )
+        session.commit()
+        retry_reconciliations(session)
+        assert [row.id for row in session.exec(select(Reconciliation)).all()] == ["job-1"]
+    assert calls == []
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    with session_scope() as session:
+        retry_reconciliations(session)
+        assert session.exec(select(Reconciliation)).all() == []
+    assert calls == ["remote-drill"]
+
+
 def test_extraction_schema_rejects_bad_payloads_and_stops_at_the_deadline(client, monkeypatch):
     from app.extract import _extraction_from_payload, extract_message
 
@@ -1039,6 +1084,12 @@ def test_extraction_schema_rejects_bad_payloads_and_stops_at_the_deadline(client
     assert _extraction_from_payload(valid, "I need notebooks", catalog, moment).item_ids == ["notebooks"]
     assert _extraction_from_payload({**valid, "window_start": "not-a-date"}, "I need notebooks", catalog, moment) is None
     assert _extraction_from_payload({"intent": "need", "items": "notebooks"}, "I need notebooks", catalog, moment) is None
+    missing = {key: value for key, value in valid.items() if key != "window_end"}
+    assert _extraction_from_payload(missing, "I need notebooks", catalog, moment) is None
+    string_quantity = {**valid, "items": [{"name": "Notebooks", "quantity": "20"}]}
+    assert _extraction_from_payload(string_quantity, "I need notebooks", catalog, moment) is None
+    nested = {**valid, "items": [{"name": "Notebooks", "quantity": 20, "note": "extra"}]}
+    assert _extraction_from_payload(nested, "I need notebooks", catalog, moment) is None
 
     import app.extract as extract
 
@@ -1049,6 +1100,7 @@ def test_extraction_schema_rejects_bad_payloads_and_stops_at_the_deadline(client
         raise AssertionError("Backboard should not run after the deadline")
 
     original_backboard = extract._from_backboard
+    original_gemini = extract._from_gemini
     monkeypatch.setattr("app.extract.gemini_api_key", lambda: "test-key")
     monkeypatch.setattr("app.extract.backboard_api_key", lambda: "test-key")
     monkeypatch.setattr("app.extract._from_backboard", backboard)
@@ -1070,5 +1122,31 @@ def test_extraction_schema_rejects_bad_payloads_and_stops_at_the_deadline(client
     live = extract_message("I need 20 notebooks Saturday", catalog)
     assert live.intent == "need"
     assert live.quantity == 20
+
+    import time
+
+    from google import genai
+
+    recorded = []
+
+    class SlowClient:
+        def __init__(self, api_key=None, http_options=None):
+            recorded.append((http_options or {}).get("timeout"))
+            self.models = self
+
+        def generate_content(self, *_args, **_kwargs):
+            time.sleep(0.15)
+            return type("Reply", (), {"text": '{"intent":"offer","items":[{"name":"Notebooks","quantity":4}],"window_start":null,"window_end":null,"area":null}'})()
+
+    monkeypatch.setattr(genai, "Client", SlowClient)
+    monkeypatch.setattr("app.extract._from_gemini", original_gemini)
+    monkeypatch.setattr("app.extract.backboard_api_key", lambda: "")
+    started = time.monotonic()
+    late = extract_message("I need 20 notebooks Saturday", catalog, deadline_seconds=0.01)
+    elapsed = time.monotonic() - started
+    assert recorded and 1 <= recorded[0] <= 10
+    assert elapsed < 0.12
+    assert late.intent == "need"
+    assert late.quantity == 20
 
 
