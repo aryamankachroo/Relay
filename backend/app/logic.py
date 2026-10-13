@@ -714,6 +714,8 @@ def _queue_reconciliation(
 
 
 def retry_reconciliations(session: Session) -> None:
+    if not snowflake_store.configured():
+        return
     rows = session.exec(select(Reconciliation)).all()
     for row in rows:
         try:
@@ -722,6 +724,8 @@ def retry_reconciliations(session: Session) -> None:
             elif row.action == "delete":
                 snowflake_store.delete_inventory_by_id(row.inventory_id)
             else:
+                continue
+            if not snowflake_store.configured():
                 continue
             session.delete(row)
         except Exception as exc:
