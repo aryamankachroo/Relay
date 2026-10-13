@@ -73,6 +73,7 @@ export function MyStuffPage() {
   )
   const [draft, setDraft] = useState<InventoryDraft>(createInventoryDraft)
   const [formNote, setFormNote] = useState('')
+  const [shelfNote, setShelfNote] = useState('')
 
   const lendableCount = useMemo(
     () => items.filter((item) => item.availableToLend && !outboundLoanForItem(loans, item.id)).length,
@@ -130,15 +131,11 @@ export function MyStuffPage() {
     event.preventDefault()
     if (!editor) return
 
-    const saved =
+    const problem =
       editor.mode === 'add' ? await addItem(draft) : await updateItem(editor.item.id, draft)
 
-    if (!saved) {
-      setFormNote(
-        draft.name.trim()
-          ? 'That name is already on your shelf.'
-          : 'Give this item a name first.',
-      )
+    if (problem) {
+      setFormNote(problem)
       return
     }
 
@@ -265,6 +262,8 @@ export function MyStuffPage() {
           </button>
         </GlassCard>
       ) : (
+        <>
+        {shelfNote ? <p className="hint">{shelfNote}</p> : null}
         <ul className="shelf-grid">
           {visibleItems.map((item) => {
             const onLoan = outboundLoanForItem(loans, item.id)
@@ -276,14 +275,19 @@ export function MyStuffPage() {
                   onLoan={onLoan}
                   pending={pending}
                   onEdit={() => openEdit(item)}
-                  onRemove={() => removeItem(item.id)}
-                  onToggleLend={(available) => setAvailableToLend(item.id, available)}
+                  onRemove={() => {
+                    void removeItem(item.id).then((problem) => setShelfNote(problem ?? ''))
+                  }}
+                  onToggleLend={(available) => {
+                    void setAvailableToLend(item.id, available).then((problem) => setShelfNote(problem ?? ''))
+                  }}
                   onAcceptPending={pending ? () => advanceLoan(pending.id) : undefined}
                 />
               </li>
             )
           })}
         </ul>
+        </>
       )}
 
       {filtersActive && !emptyShelf && !emptyFilter ? (

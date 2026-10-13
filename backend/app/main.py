@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException
+
+from app.auth import current_actor, same_resident
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -165,14 +167,24 @@ def create_app() -> FastAPI:
         ]
 
     @app.get("/api/me")
-    def get_me(clerk_user_id: str, session: Session = Depends(get_session)):
+    def get_me(
+        clerk_user_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        clerk_user_id = same_resident(actor, clerk_user_id)
         resident = session.get(Resident, clerk_user_id)
         if resident is None:
             return {"resident_id": None, "city": "", "about": "", "onboarded": False}
         return _profile_out(resident)
 
     @app.post("/api/me")
-    def save_me(body: ProfileIn, session: Session = Depends(get_session)):
+    def save_me(
+        body: ProfileIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        body.clerk_user_id = same_resident(actor, body.clerk_user_id)
         if snowflake_configured():
             try:
                 upsert_profile(
@@ -241,20 +253,29 @@ def create_app() -> FastAPI:
         ]
 
     @app.post("/api/chat")
-    def chat(body: ChatIn, session: Session = Depends(get_session)):
-        return handle_chat(session, body.resident_id, body.message)
+    def chat(
+        body: ChatIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return handle_chat(session, same_resident(actor, body.resident_id), body.message)
 
     @app.post("/api/requests/{request_id}/confirm")
     def post_confirm_request(
         request_id: str,
         body: ResidentAction,
         session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
     ):
-        return confirm_request(session, request_id, body.resident_id)
+        return confirm_request(session, request_id, same_resident(actor, body.resident_id))
 
     @app.get("/api/projects")
-    def list_projects(resident_id: str = "avery", session: Session = Depends(get_session)):
-        return projects_for(session, resident_id)
+    def list_projects(
+        resident_id: str = "avery",
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return projects_for(session, same_resident(actor, resident_id))
 
     @app.patch("/api/projects/{project_id}/tools/{tool_id}")
     def patch_tool(
@@ -262,26 +283,47 @@ def create_app() -> FastAPI:
         tool_id: str,
         body: ToolPatch,
         session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
     ):
-        return update_tool(session, project_id, tool_id, body.optional, body.have_already)
+        return update_tool(session, project_id, tool_id, body.optional, body.have_already, actor)
 
     @app.post("/api/projects/{project_id}/tools", status_code=201)
-    def post_tool(project_id: str, body: ToolIn, session: Session = Depends(get_session)):
-        return add_tool(session, project_id, body.catalog_item_id, body.optional)
+    def post_tool(
+        project_id: str,
+        body: ToolIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return add_tool(session, project_id, body.catalog_item_id, body.optional, actor)
 
     @app.delete("/api/projects/{project_id}/tools/{tool_id}")
-    def delete_tool(project_id: str, tool_id: str, session: Session = Depends(get_session)):
-        return remove_tool(session, project_id, tool_id)
+    def delete_tool(
+        project_id: str,
+        tool_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return remove_tool(session, project_id, tool_id, actor)
 
     @app.get("/api/inventory")
-    def list_inventory(resident_id: str | None = None, session: Session = Depends(get_session)):
+    def list_inventory(
+        resident_id: str | None = None,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        if actor is not None:
+            resident_id = same_resident(actor, resident_id or actor)
         return inventory_view(session, resident_id)
 
     @app.post("/api/inventory", status_code=201)
-    def post_inventory(body: ShelfIn, session: Session = Depends(get_session)):
+    def post_inventory(
+        body: ShelfIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
         return create_shelf_item(
             session,
-            body.resident_id,
+            same_resident(actor, body.resident_id),
             body.name,
             body.category,
             body.quantity,
@@ -291,10 +333,15 @@ def create_app() -> FastAPI:
         )
 
     @app.patch("/api/inventory/{item_id}")
-    def patch_inventory(item_id: str, body: ShelfIn, session: Session = Depends(get_session)):
+    def patch_inventory(
+        item_id: str,
+        body: ShelfIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
         return update_shelf_item(
             session,
-            body.resident_id,
+            same_resident(actor, body.resident_id),
             item_id,
             body.name,
             body.category,
@@ -305,26 +352,51 @@ def create_app() -> FastAPI:
         )
 
     @app.delete("/api/inventory/{item_id}")
-    def remove_inventory(item_id: str, resident_id: str, session: Session = Depends(get_session)):
-        return delete_shelf_item(session, resident_id, item_id)
+    def remove_inventory(
+        item_id: str,
+        resident_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return delete_shelf_item(session, same_resident(actor, resident_id), item_id)
 
     @app.get("/api/my-stuff")
-    def get_my_stuff(resident_id: str = "avery", session: Session = Depends(get_session)):
-        return my_stuff(session, resident_id)
+    def get_my_stuff(
+        resident_id: str = "avery",
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return my_stuff(session, same_resident(actor, resident_id))
 
     @app.get("/api/neighborhood")
-    def get_neighborhood(resident_id: str = "avery", session: Session = Depends(get_session)):
-        return neighborhood(session, resident_id)
+    def get_neighborhood(
+        resident_id: str = "avery",
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return neighborhood(session, same_resident(actor, resident_id))
 
     @app.get("/api/activity")
-    def get_activity(resident_id: str | None = None, session: Session = Depends(get_session)):
+    def get_activity(
+        resident_id: str | None = None,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        if actor is not None and resident_id is not None:
+            resident_id = same_resident(actor, resident_id)
+        elif actor is not None:
+            resident_id = actor
         return activity(session, resident_id)
 
     @app.post("/api/loans", status_code=201)
-    def post_loan(body: LoanIn, session: Session = Depends(get_session)):
+    def post_loan(
+        body: LoanIn,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
         return create_loan(
             session,
-            body.borrower_id,
+            same_resident(actor, body.borrower_id),
             body.lender_id,
             body.catalog_item_id,
             body.window_start,
@@ -334,28 +406,54 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/api/loans/{loan_id}/respond")
-    def post_respond(loan_id: str, body: LoanRespond, session: Session = Depends(get_session)):
-        return respond_loan(session, loan_id, body.action, body.window_start, body.window_end)
+    def post_respond(
+        loan_id: str,
+        body: LoanRespond,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return respond_loan(session, loan_id, body.action, body.window_start, body.window_end, actor)
 
     @app.post("/api/loans/{loan_id}/pickup")
-    def post_pickup(loan_id: str, session: Session = Depends(get_session)):
-        return pickup_loan(session, loan_id)
+    def post_pickup(
+        loan_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return pickup_loan(session, loan_id, actor)
 
     @app.post("/api/loans/{loan_id}/return")
-    def post_return(loan_id: str, session: Session = Depends(get_session)):
-        return return_loan(session, loan_id)
+    def post_return(
+        loan_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return return_loan(session, loan_id, actor)
 
     @app.post("/api/handoffs/{handoff_id}/confirm")
-    def post_confirm(handoff_id: str, body: ResidentAction, session: Session = Depends(get_session)):
-        return confirm_handoff(session, handoff_id, body.resident_id)
+    def post_confirm(
+        handoff_id: str,
+        body: ResidentAction,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return confirm_handoff(session, handoff_id, same_resident(actor, body.resident_id))
 
     @app.post("/api/handoffs/{handoff_id}/decline")
-    def post_decline(handoff_id: str, session: Session = Depends(get_session)):
-        return decline_handoff(session, handoff_id)
+    def post_decline(
+        handoff_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return decline_handoff(session, handoff_id, actor)
 
     @app.post("/api/handoffs/{handoff_id}/received")
-    def post_received(handoff_id: str, session: Session = Depends(get_session)):
-        return receive_handoff(session, handoff_id)
+    def post_received(
+        handoff_id: str,
+        session: Session = Depends(get_session),
+        actor: str | None = Depends(current_actor),
+    ):
+        return receive_handoff(session, handoff_id, actor)
 
     @app.get("/api/shared-demand")
     def get_shared_demand(session: Session = Depends(get_session)):

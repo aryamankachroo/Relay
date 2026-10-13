@@ -31,7 +31,6 @@ function SignedInApp() {
   useEffect(() => {
     if (!resident.id) return
     let cancel = false
-    setError('')
     api
       .profile(resident.id)
       .then((saved) => {

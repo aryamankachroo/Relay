@@ -3,7 +3,7 @@ import { exchangeRequestsFromApi, handoffsFromApi } from '../api/adapt.ts'
 import { api } from '../api/client.ts'
 import type { ExchangeDraft } from '../data/exchanges.ts'
 import { useActivityFeed } from './activityFeedStore.ts'
-import { useShelfResident } from './shelfResident.tsx'
+import { useShelfResident } from './shelfResidentStore.ts'
 import { HandoffContext } from './handoffStore.ts'
 
 /** Hand Off needs, offers, and handoffs, read from the API activity poll. */

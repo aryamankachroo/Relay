@@ -1,6 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react'
-
-const ShelfResidentContext = createContext<string | null>(null)
+import type { ReactNode } from 'react'
+import { ShelfResidentContext } from './shelfResidentStore.ts'
 
 /** The existing neighbor this Clerk login keeps. The match does not change. */
 export function ShelfResidentProvider({
@@ -11,10 +10,4 @@ export function ShelfResidentProvider({
   children: ReactNode
 }) {
   return <ShelfResidentContext.Provider value={residentId}>{children}</ShelfResidentContext.Provider>
-}
-
-export function useShelfResident() {
-  const residentId = useContext(ShelfResidentContext)
-  if (!residentId) throw new Error('useShelfResident must be used within ShelfResidentProvider')
-  return residentId
 }

@@ -12,6 +12,13 @@ import type {
 
 export const apiBase = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
+let tokenProvider: () => Promise<string | null> = async () => null
+
+/** Clerk session token. The app sets this after sign-in. Do not paste a token by hand. */
+export function setAuthTokenProvider(provider: () => Promise<string | null>) {
+  tokenProvider = provider
+}
+
 export class ApiError extends Error {
   status: number
   detail: unknown
@@ -24,9 +31,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await tokenProvider()
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   })
   const body: unknown = await response.json().catch(() => null)
   if (!response.ok) {

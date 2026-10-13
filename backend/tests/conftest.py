@@ -1,6 +1,7 @@
 import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["RELAY_AUTH_DISABLED"] = "1"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["BACKBOARD_API_KEY"] = ""
 for key in (

@@ -15,7 +15,7 @@ import {
 import { givenName, loanStatusCopy, type LoanRequest } from '../data/lending.ts'
 import { useInventory } from '../state/inventoryStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
-import { useShelfResident } from '../state/shelfResident.tsx'
+import { useShelfResident } from '../state/shelfResidentStore.ts'
 import { api } from '../api/client.ts'
 import type { ApiInventoryItem } from '../api/types.ts'
 

@@ -11,7 +11,7 @@ import {
 import { useActivityFeed } from './activityFeedStore.ts'
 import { useCurrentResident } from './currentResident.ts'
 import { LoanRequestsContext } from './loanStore.ts'
-import { useShelfResident } from './shelfResident.tsx'
+import { useShelfResident } from './shelfResidentStore.ts'
 
 /** Borrow Tomorrow loans Avery is part of, read from the API activity poll. */
 export function LoanRequestsProvider({ children }: { children: ReactNode }) {

@@ -38,6 +38,10 @@ def snowflake_settings() -> dict[str, str] | None:
     return values
 
 
+def clerk_secret_key() -> str:
+    return os.environ.get("CLERK_SECRET_KEY", "").strip()
+
+
 def gemini_api_key() -> str:
     return os.environ.get("GEMINI_API_KEY", "").strip()
 

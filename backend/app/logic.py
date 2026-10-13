@@ -180,10 +180,13 @@ def respond_loan(
     action: str,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    actor: str | None = None,
 ) -> dict:
     loan = session.get(Loan, loan_id)
     if loan is None:
         raise HTTPException(status_code=404, detail="Loan not found")
+    if actor is not None and loan.lender_id != actor:
+        raise HTTPException(status_code=403, detail="Only the lender can answer this loan.")
     if action == "decline":
         if loan.status != "requested":
             raise HTTPException(status_code=409, detail="Only a requested loan can be declined")
@@ -232,8 +235,10 @@ def respond_loan(
     return {"type": "loan_status", "record": "loan", **_loan_dict(loan)}
 
 
-def pickup_loan(session: Session, loan_id: str) -> dict:
+def pickup_loan(session: Session, loan_id: str, actor: str | None = None) -> dict:
     loan = _loan(session, loan_id)
+    if actor is not None and loan.borrower_id != actor:
+        raise HTTPException(status_code=403, detail="Only the borrower can pick this up.")
     if loan.status != "confirmed":
         raise HTTPException(status_code=409, detail="Pick up a confirmed loan")
     loan.status = "picked_up"
@@ -243,8 +248,10 @@ def pickup_loan(session: Session, loan_id: str) -> dict:
     return {"type": "loan_status", "record": "loan", **_loan_dict(loan)}
 
 
-def return_loan(session: Session, loan_id: str) -> dict:
+def return_loan(session: Session, loan_id: str, actor: str | None = None) -> dict:
     loan = _loan(session, loan_id)
+    if actor is not None and loan.borrower_id != actor:
+        raise HTTPException(status_code=403, detail="Only the borrower can return this.")
     if loan.status != "picked_up":
         raise HTTPException(status_code=409, detail="Return a loan that was picked up")
     loan.status = "returned"
@@ -280,8 +287,10 @@ def confirm_handoff(session: Session, handoff_id: str, resident_id: str) -> dict
     return {"type": "loan_status", "record": "handoff", **_handoff_dict(session, handoff)}
 
 
-def decline_handoff(session: Session, handoff_id: str) -> dict:
+def decline_handoff(session: Session, handoff_id: str, actor: str | None = None) -> dict:
     handoff = _handoff(session, handoff_id)
+    if actor is not None and not _handoff_party(session, handoff, actor):
+        raise HTTPException(status_code=403, detail="Only someone in this handoff can decline it.")
     if handoff.status not in {"proposed", "confirmed"}:
         raise HTTPException(status_code=409, detail="This handoff cannot be declined")
     handoff.status = "declined"
@@ -292,8 +301,10 @@ def decline_handoff(session: Session, handoff_id: str) -> dict:
     return {"type": "loan_status", "record": "handoff", **_handoff_dict(session, handoff)}
 
 
-def receive_handoff(session: Session, handoff_id: str) -> dict:
+def receive_handoff(session: Session, handoff_id: str, actor: str | None = None) -> dict:
     handoff = _handoff(session, handoff_id)
+    if actor is not None and handoff.recipient_id != actor:
+        raise HTTPException(status_code=403, detail="Only the person receiving this can mark it received.")
     if handoff.status != "confirmed":
         raise HTTPException(status_code=409, detail="Mark a confirmed handoff as received")
     handoff.status = "received"
@@ -381,17 +392,21 @@ def inventory_view(session: Session, resident_id: str | None = None) -> dict:
             payload["snowflake_message"] = raw["snowflake_message"]
         return payload
     catalog = _catalog(session)
+    local_by_name = {
+        (item["resident_id"], str(item["catalog_item"]).lower()): item for item in local
+    }
     items = []
     seen = set()
     for row in raw["items"]:
         label = str(row.get("catalog_item") or "")
-        match = _match_label(label, catalog)
         owner = str(row.get("resident_id") or "")
         if resident_id is not None and owner != resident_id:
             continue
-        item = _inventory_item(row, match)
+        key = (owner, label.lower())
+        saved = local_by_name.get(key)
+        item = saved if saved is not None else _inventory_item(row, _match_label(label, catalog))
         items.append(item)
-        seen.add((item["resident_id"], str(item["catalog_item"]).lower()))
+        seen.add(key)
     for item in local:
         key = (item["resident_id"], str(item["catalog_item"]).lower())
         if key not in seen:
@@ -426,8 +441,7 @@ def create_shelf_item(
         available_to_lend=available_to_lend,
     )
     session.add(item)
-    session.commit()
-    _mirror_inventory(resident, item, None)
+    _save_shelf(session, resident, item, None)
     return _shelf_dict(item, resident)
 
 
@@ -461,8 +475,7 @@ def update_shelf_item(
     item.notes = notes.strip()
     item.available_to_lend = available_to_lend
     session.add(item)
-    session.commit()
-    _mirror_inventory(resident, item, previous or cleaned)
+    _save_shelf(session, resident, item, previous or cleaned)
     return _shelf_dict(item, resident)
 
 
@@ -472,11 +485,14 @@ def delete_shelf_item(session: Session, resident_id: str, item_id: str) -> dict:
     if item is not None and item.resident_id != resident.id:
         raise HTTPException(status_code=403, detail="That item belongs to someone else.")
     label = item.name if item is not None else _label_for_id(session, resident.id, item_id)
+    if label and snowflake_store.configured():
+        try:
+            snowflake_store.delete_inventory(resident.id, label)
+        except snowflake_store.SnowflakeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
     if item is not None:
         session.delete(item)
         session.commit()
-    if label and snowflake_store.configured():
-        snowflake_store.delete_inventory(resident.id, label)
     return {"deleted": item_id}
 
 
@@ -556,6 +572,30 @@ def _label_for_id(session: Session, resident_id: str, item_id: str) -> str | Non
                 return item.name
         return token
     return None
+
+
+def _save_shelf(session: Session, resident: Resident, item: ShelfItem, previous_name: str | None) -> None:
+    try:
+        session.flush()
+        _mirror_inventory(resident, item, previous_name)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _own_project(session: Session, project_id: str, actor: str | None) -> None:
+    if actor is None:
+        return
+    project = session.get(Project, project_id)
+    if project is not None and project.resident_id != actor:
+        raise HTTPException(status_code=403, detail="This account cannot change another resident's project.")
+
+
+def _handoff_party(session: Session, handoff, actor: str) -> bool:
+    if handoff.recipient_id == actor:
+        return True
+    return any(row.resident_id == actor for row in _allocations(session, handoff.id))
 
 
 def _mirror_inventory(resident: Resident, item: ShelfItem, previous_name: str | None) -> None:
@@ -640,7 +680,15 @@ def my_stuff(session: Session, resident_id: str) -> dict:
     }
 
 
-def update_tool(session: Session, project_id: str, tool_id: str, optional: bool | None, have_already: bool | None) -> dict:
+def update_tool(
+    session: Session,
+    project_id: str,
+    tool_id: str,
+    optional: bool | None,
+    have_already: bool | None,
+    actor: str | None = None,
+) -> dict:
+    _own_project(session, project_id, actor)
     tool = session.get(ProjectTool, tool_id)
     if tool is None or tool.project_id != project_id:
         raise HTTPException(status_code=404, detail="Tool not found")
@@ -654,7 +702,14 @@ def update_tool(session: Session, project_id: str, tool_id: str, optional: bool 
     return _project_dict(session, project)
 
 
-def add_tool(session: Session, project_id: str, catalog_item_id: str, optional: bool = False) -> dict:
+def add_tool(
+    session: Session,
+    project_id: str,
+    catalog_item_id: str,
+    optional: bool = False,
+    actor: str | None = None,
+) -> dict:
+    _own_project(session, project_id, actor)
     project = session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -675,7 +730,8 @@ def add_tool(session: Session, project_id: str, catalog_item_id: str, optional: 
     return _project_dict(session, project)
 
 
-def remove_tool(session: Session, project_id: str, tool_id: str) -> dict:
+def remove_tool(session: Session, project_id: str, tool_id: str, actor: str | None = None) -> dict:
+    _own_project(session, project_id, actor)
     tool = session.get(ProjectTool, tool_id)
     if tool is None or tool.project_id != project_id:
         raise HTTPException(status_code=404, detail="Tool not found")

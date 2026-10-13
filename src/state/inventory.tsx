@@ -19,15 +19,14 @@ export function InventoryProvider({ residentId, children }: { residentId: string
       .inventory(residentId)
       .then((body) => {
         if (cancel) return
-        if (body.snowflake !== 'ok') {
-          setItems([])
-          setStatus('error')
-          setMessage(body.snowflake_message || 'Snowflake inventory is not available.')
+        setItems(body.items.map(toShelfItem))
+        if (body.snowflake === 'ok' || body.items.length > 0) {
+          setStatus('ready')
+          setMessage(body.snowflake === 'ok' ? '' : body.snowflake_message || 'Showing the shelf saved on this machine.')
           return
         }
-        setItems(body.items.map(toShelfItem))
-        setStatus('ready')
-        setMessage('')
+        setStatus('error')
+        setMessage(body.snowflake_message || 'Snowflake inventory is not available.')
       })
       .catch((error: unknown) => {
         if (cancel) return
@@ -42,29 +41,27 @@ export function InventoryProvider({ residentId, children }: { residentId: string
 
   const addItem = useCallback(async (draft: InventoryDraft) => {
     const next = sanitizeDraft(draft)
-    if (!next) return false
-    if (hasDuplicateName(items, next.name)) return false
+    if (!next) return 'Give this item a name first.'
+    if (hasDuplicateName(items, next.name)) return 'That name is already on your shelf.'
     try {
       const saved = await api.createInventory(residentId, shelfBody(next))
       setItems((current) => [...current, toShelfItem(saved)])
-      return true
+      return null
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) return false
-      return false
+      return shelfProblem(caught)
     }
   }, [items, residentId])
 
   const updateItem = useCallback(async (id: string, draft: InventoryDraft) => {
     const next = sanitizeDraft(draft)
-    if (!next) return false
-    if (hasDuplicateName(items, next.name, id)) return false
+    if (!next) return 'Give this item a name first.'
+    if (hasDuplicateName(items, next.name, id)) return 'That name is already on your shelf.'
     try {
       const saved = await api.updateInventory(residentId, id, shelfBody(next))
       setItems((current) => current.map((item) => (item.id === id ? toShelfItem(saved) : item)))
-      return true
+      return null
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) return false
-      return false
+      return shelfProblem(caught)
     }
   }, [items, residentId])
 
@@ -73,20 +70,24 @@ export function InventoryProvider({ residentId, children }: { residentId: string
     setItems((current) => current.filter((item) => item.id !== id))
     try {
       await api.deleteInventory(residentId, id)
-    } catch {
+      return null
+    } catch (caught) {
       setItems(previous)
+      return shelfProblem(caught)
     }
   }, [items, residentId])
 
   const setAvailableToLend = useCallback(async (id: string, available: boolean) => {
     const current = items.find((item) => item.id === id)
-    if (!current) return
+    if (!current) return 'That item is no longer on your shelf.'
     setItems((rows) => rows.map((item) => (item.id === id ? { ...item, availableToLend: available } : item)))
     try {
       const saved = await api.updateInventory(residentId, id, shelfBody({ ...current, availableToLend: available }))
       setItems((rows) => rows.map((item) => (item.id === id ? toShelfItem(saved) : item)))
-    } catch {
+      return null
+    } catch (caught) {
       setItems((rows) => rows.map((item) => (item.id === id ? current : item)))
+      return shelfProblem(caught)
     }
   }, [items, residentId])
 
@@ -142,6 +143,12 @@ function toShelfItem(row: ApiInventoryItem): InventoryItem {
     notes: row.condition_note || '',
     availableToLend: Boolean(row.willing_to_lend),
   }
+}
+
+function shelfProblem(caught: unknown) {
+  if (caught instanceof ApiError) return caught.message
+  if (caught instanceof Error && caught.message) return caught.message
+  return 'The shelf could not be saved.'
 }
 
 function hasDuplicateName(items: readonly InventoryItem[], name: string, ignoreId?: string) {

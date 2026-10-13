@@ -1,7 +1,6 @@
 import {
   lazy,
   Suspense,
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -25,7 +24,7 @@ import { demoCommunityLabel } from '../data/index.ts'
 import { sphereClass } from '../data/sectionSpheres.ts'
 import { useActivityFeed } from '../state/activityFeedStore.ts'
 import { useCurrentResident } from '../state/currentResident.ts'
-import { useShelfResident } from '../state/shelfResident.tsx'
+import { useShelfResident } from '../state/shelfResidentStore.ts'
 
 const RelayCatCharacter = lazy(async () => {
   const mod = await import('../components/RelayCatCharacter.tsx')
@@ -69,14 +68,10 @@ export function ChatPage() {
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [pondEl, setPondEl] = useState<HTMLDivElement | null>(null)
-  const [catMounted, setCatMounted] = useState(false)
+  const [catMounted] = useState(true)
 
   const canSend = draft.trim().length > 0
   const announcement = latestRelayAnnouncement(messages)
-
-  useEffect(() => {
-    setCatMounted(true)
-  }, [])
 
   useLayoutEffect(() => {
     const input = inputRef.current

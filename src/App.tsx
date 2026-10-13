@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
-import { Show, UserButton } from '@clerk/react-router'
+import { Show, useAuth, UserButton } from '@clerk/react-router'
+import { setAuthTokenProvider } from './api/client.ts'
 import { GlassCard } from './components/GlassCard.tsx'
 
 export default function App({ children }: { children: ReactNode }) {
@@ -8,6 +9,7 @@ export default function App({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <ClerkSession />
       <Show when="signed-in">{children}</Show>
       <Show when="signed-out">
         <div className="app-shell">
@@ -33,6 +35,12 @@ const homes = [
   { name: 'Rosa', at: [7, 2], roof: 'var(--sky)' },
   { name: 'Sam', at: [0, 2], roof: 'var(--rose)' },
 ]
+
+function ClerkSession() {
+  const { getToken, isSignedIn } = useAuth()
+  setAuthTokenProvider(() => (isSignedIn ? getToken() : Promise.resolve(null)))
+  return null
+}
 
 function House({ i, j, roof, lit, h = 64 }: { i: number; j: number; roof: string; lit: boolean; h?: number }) {
   const c = iso(i, j), a = TW * 0.28, b = a / 2, y = c.y - 6;

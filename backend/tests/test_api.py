@@ -277,3 +277,121 @@ def test_local_dataset_covers_heavy_inventory(client):
     everyone = client.get("/api/inventory").json()
     assert everyone["snowflake"] == "not_configured"
     assert len(everyone["items"]) >= 5000
+
+
+def test_requests_without_a_clerk_token_are_rejected(client, monkeypatch):
+    monkeypatch.setenv("RELAY_AUTH_DISABLED", "")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_example")
+    response = client.get("/api/my-stuff")
+    assert response.status_code == 401
+
+
+def test_shelf_keeps_its_id_and_metadata_when_snowflake_has_none(client, monkeypatch):
+    created = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "avery",
+            "name": "Ladder",
+            "category": "Garden",
+            "quantity": 1,
+            "condition": "Fair",
+            "notes": "Porch",
+            "available_to_lend": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["inventory_id"]
+    monkeypatch.setattr(
+        "app.logic.snowflake_store.fetch_inventory",
+        lambda: {
+            "snowflake": "ok",
+            "items": [
+                {
+                    "resident_id": "avery",
+                    "resident_name": "Avery Moss",
+                    "catalog_item": "Ladder",
+                    "quantity": 1,
+                    "willing_to_lend": True,
+                    "condition_note": "",
+                }
+            ],
+        },
+    )
+    listed = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    row = next(item for item in listed["items"] if item["inventory_id"] == item_id)
+    assert row["category"] == "Garden"
+    assert row["condition"] == "Fair"
+    assert row["inventory_id"] == item_id
+
+
+def test_failed_snowflake_mirror_does_not_keep_the_shelf_row(client, monkeypatch):
+    from app.snowflake_store import SnowflakeError
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+
+    def fail(_row):
+        raise SnowflakeError("warehouse down")
+
+    monkeypatch.setattr("app.logic.snowflake_store.insert_inventory_if_missing", fail)
+    response = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "avery",
+            "name": "Wagon",
+            "category": "Garden",
+            "quantity": 1,
+            "condition": "Good",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert response.status_code == 502
+    listed = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    assert all(row["catalog_item"] != "Wagon" for row in listed["items"])
+
+
+def test_backboard_http_errors_fall_through_to_regex(client, monkeypatch):
+    import httpx
+
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("BACKBOARD_API_KEY", "test-key")
+    calls = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        calls.append({"url": url, "timeout": timeout, "key": (headers or {}).get("X-API-Key")})
+
+        class Response:
+            def raise_for_status(self):
+                request = httpx.Request("POST", url)
+                response = httpx.Response(401, request=request)
+                raise httpx.HTTPStatusError("unauthorized", request=request, response=response)
+
+            def json(self):
+                return {"content": "{"}
+
+        return Response()
+
+    monkeypatch.setattr(httpx, "post", post)
+    yes = client.post("/api/chat", json={"resident_id": "avery", "message": "yes"})
+    assert yes.status_code == 200
+    assert calls == []
+
+    card = _say(client, "avery", "I need 20 notebooks Saturday morning")
+    assert card["type"] == "confirmation"
+    assert calls[0]["url"] == "https://app.backboard.io/api/threads/messages"
+    assert calls[0]["timeout"] == 20
+    assert calls[0]["key"] == "test-key"
+
+    def malformed(url, headers=None, json=None, timeout=None):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"content": "not json", "items": 12}
+
+        return Response()
+
+    monkeypatch.setattr(httpx, "post", malformed)
+    again = _say(client, "jordan", "I need 20 notebooks Saturday morning")
+    assert again["type"] == "confirmation"

@@ -34,10 +34,12 @@ Each example file says where the real values go. Do not commit those files.
 | Example | Copy to | What it holds |
 | --- | --- | --- |
 | `.env.example` | `.env.local` | Clerk and Mapbox keys for the UI |
-| `backend/.env.example` | `backend/.env` | Snowflake, Gemini, and Backboard |
+| `backend/.env.example` | `backend/.env` | Clerk secret key, Snowflake, Gemini, and Backboard |
 | `imessage/.env.example` | `imessage/.env` | Backend and site URLs for the text bridge |
 
 `.env.local` and `backend/.env` are gitignored. Example files must stay placeholders.
+
+The Clerk **secret key** goes in `backend/.env` as `CLERK_SECRET_KEY`. The publishable key stays in `.env.local`. You do not paste a session token. After sign-in the app sends it as `Authorization: Bearer` on each API call, and the API uses that account as the resident.
 
 ## First visit
 

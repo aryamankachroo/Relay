@@ -41,6 +41,9 @@ class Extraction:
 
 def extract_message(text: str, catalog: list[CatalogItem], now: datetime | None = None) -> Extraction:
     moment = now or utcnow()
+    answer = _yes_no(text)
+    if answer is not None:
+        return answer
     gemini = _from_gemini(text, catalog, moment)
     if gemini is not None:
         return gemini
@@ -50,15 +53,19 @@ def extract_message(text: str, catalog: list[CatalogItem], now: datetime | None 
     return _fallback(text, catalog, moment)
 
 
-def _fallback(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction:
+def _yes_no(text: str) -> Extraction | None:
     normalized = re.sub(r"[^a-z\s]", "", text.lower()).strip()
-    window = _window(text, now)
-    area = _area(text)
-    quantity = _quantity(text)
     if normalized in CONFIRM_YES:
         return Extraction("confirm_yes", [], 1, None, None, None)
     if normalized in CONFIRM_NO:
         return Extraction("confirm_no", [], 1, None, None, None)
+    return None
+
+
+def _fallback(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction:
+    window = _window(text, now)
+    area = _area(text)
+    quantity = _quantity(text)
 
     bookshelf = is_bookshelf(text)
     mentioned = [item.id for item in mentioned_items(text, catalog)]
@@ -177,7 +184,10 @@ def _extraction_from_payload(
     item_ids: list[str] = []
     extra_names: list[str] = []
     quantity = 1
-    for entry in payload.get("items") or []:
+    raw_items = payload.get("items") or []
+    if not isinstance(raw_items, list):
+        return None
+    for entry in raw_items:
         if not isinstance(entry, dict):
             continue
         name = " ".join(str(entry.get("name") or "").split())[:MAX_TOOL_NAME]
@@ -191,8 +201,8 @@ def _extraction_from_payload(
             continue
         item_ids.append(match.id)
         try:
-            quantity = max(1, int(entry.get("quantity") or 1))
-        except (TypeError, ValueError):
+            quantity = max(1, min(99, int(entry.get("quantity") or 1)))
+        except (TypeError, ValueError, OverflowError):
             quantity = 1
     if intent == "project":
         room = max(0, MAX_PROJECT_TOOLS - len(item_ids))
@@ -236,7 +246,7 @@ def _parse_optional_dt(value) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(value)
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
