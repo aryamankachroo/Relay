@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 
@@ -21,9 +22,14 @@ LOAN_BUFFER_MINUTES = 30
 
 
 def load_env() -> None:
-    if not ENV_PATH.exists():
+    for path in (ENV_PATH, ENV_PATH.parent.parent / ".env.local"):
+        _load_env_file(path)
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
         return
-    for line in ENV_PATH.read_text().splitlines():
+    for line in path.read_text().splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
@@ -39,7 +45,33 @@ def snowflake_settings() -> dict[str, str] | None:
 
 
 def clerk_issuer() -> str:
-    return os.environ.get("CLERK_ISSUER", "").strip()
+    explicit = os.environ.get("CLERK_ISSUER", "").strip()
+    if explicit:
+        return explicit
+    for name in ("CLERK_PUBLISHABLE_KEY", "VITE_CLERK_PUBLISHABLE_KEY"):
+        derived = issuer_from_publishable_key(os.environ.get(name, ""))
+        if derived:
+            return derived
+    return ""
+
+
+def issuer_from_publishable_key(key: str) -> str:
+    encoded = key.strip()
+    for prefix in ("pk_test_", "pk_live_"):
+        if encoded.startswith(prefix):
+            encoded = encoded[len(prefix):]
+            break
+    else:
+        return ""
+    padded = encoded + "=" * (-len(encoded) % 4)
+    try:
+        host = base64.b64decode(padded).decode("utf-8")
+    except Exception:
+        return ""
+    host = host.rstrip("$").strip()
+    if not host or any(mark in host for mark in ("\x00", " ", "/")) or "." not in host:
+        return ""
+    return f"https://{host}"
 
 
 def clerk_secret_key() -> str:

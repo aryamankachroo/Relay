@@ -1,5 +1,6 @@
 """Clerk session tokens. These tests sign their own keys and never call Clerk."""
 
+import base64
 import json
 import time
 
@@ -21,6 +22,17 @@ READS = (
     "/api/garden",
     "/api/me?clerk_user_id=avery",
 )
+
+
+def test_issuer_comes_from_the_publishable_key_when_unset(monkeypatch):
+    from app.config import clerk_issuer
+
+    host = "relay-test.clerk.accounts.dev$"
+    key = "pk_test_" + base64.b64encode(host.encode()).decode().rstrip("=")
+    monkeypatch.setenv("CLERK_ISSUER", "")
+    monkeypatch.setenv("VITE_CLERK_PUBLISHABLE_KEY", "")
+    monkeypatch.setenv("CLERK_PUBLISHABLE_KEY", key)
+    assert clerk_issuer() == "https://relay-test.clerk.accounts.dev"
 
 
 def _pair(kid="relay-test"):
@@ -81,6 +93,8 @@ def test_missing_expired_tampered_and_wrong_instance_tokens_are_rejected(client,
     assert client.get("/api/my-stuff", params={"resident_id": "avery"}, headers=_auth(timeless)).status_code == 401
 
     monkeypatch.setenv("CLERK_ISSUER", "")
+    monkeypatch.setenv("CLERK_PUBLISHABLE_KEY", "")
+    monkeypatch.setenv("VITE_CLERK_PUBLISHABLE_KEY", "")
     assert client.get("/api/my-stuff", params={"resident_id": "avery"}, headers=_auth(_token(private, "avery"))).status_code == 503
 
 

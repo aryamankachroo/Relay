@@ -39,7 +39,7 @@ Each example file says where the real values go. Do not commit those files.
 
 `.env.local` and `backend/.env` are gitignored. Example files must stay placeholders.
 
-The Clerk **secret key** goes in `backend/.env` as `CLERK_SECRET_KEY`. Set `CLERK_ISSUER` to the Frontend API URL from the Clerk dashboard, such as `https://your-app.clerk.accounts.dev`. The publishable key stays in `.env.local`. You do not paste a session token. After sign-in the app sends it as `Authorization: Bearer` on each API call, and the API uses that account as the resident.
+The Clerk **secret key** goes in `backend/.env` as `CLERK_SECRET_KEY`. The publishable key stays in `.env.local`. You do not paste a session token. After sign-in the app sends it as `Authorization: Bearer` on each API call, and the API uses that account as the resident. Set `CLERK_ISSUER` in `backend/.env` when you want to name the Frontend API URL yourself. When it is blank, the API derives that URL from the publishable key.
 
 ## First visit
 
@@ -59,6 +59,6 @@ npm start
 
 `npm start` serves `build/client`. A visit to `/activity` or `/my-stuff` returns the app shell, so a refresh on those routes keeps working.
 
-Browser coverage needs Clerk development keys. Put `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` in `.env.local`, or export `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Then run `npm run test:e2e`. The test creates two temporary Clerk users, walks onboarding, a shelf edit, a loan, and a partial handoff, then deletes those users. If setup fails after a user is created, that user is deleted too. GitHub Actions runs the same check when those two secrets are set on the repository.
+Browser coverage needs Clerk development keys. Put `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` in `.env.local`, or export `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Then run `npm run test:e2e`. The test creates two temporary Clerk users, walks onboarding, a shelf edit, a loan, and a partial handoff, then deletes those users. If setup fails after a user is created, that user is deleted too. GitHub Actions runs the same check when repository secrets `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` are set. Without them, that job skips instead of failing.
 
 Chat still answers “I’m building a bookshelf this weekend” and “I need 20 notebooks Saturday morning” when the model keys are empty, using the catalog fallback.
