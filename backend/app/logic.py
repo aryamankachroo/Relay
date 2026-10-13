@@ -1,6 +1,9 @@
 import json
+import os
 import threading
+import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -160,6 +163,7 @@ def _create_loan_locked(
         raise HTTPException(status_code=400, detail="You cannot borrow from yourself")
     window_start = aware(window_start)
     window_end = aware(window_end)
+    _require_window(window_start, window_end)
     if window_end <= now():
         raise HTTPException(status_code=400, detail="That window is already over")
     _require_place(borrower, lender)
@@ -179,7 +183,7 @@ def _create_loan_locked(
     )
     session.add(borrow)
     session.flush()
-    _publish(session, borrow)
+    _publish(session, borrow, commit=False)
     loan = Loan(
         id=uuid4().hex,
         lender_id=lender_id,
@@ -235,6 +239,7 @@ def _respond_loan_locked(
         lender = _resident(session, loan.lender_id)
         borrower = _resident(session, loan.borrower_id)
         _begin_immediate(session)
+        _require_window(loan.window_start, loan.window_end)
         _require_place(borrower, lender)
         _require_offer(
             session,
@@ -254,6 +259,7 @@ def _respond_loan_locked(
             raise HTTPException(status_code=400, detail="propose_time needs a window")
         window_start = aware(window_start)
         window_end = aware(window_end)
+        _require_window(window_start, window_end)
         slot = _assert_free(
             session,
             loan.lender_id,
@@ -637,7 +643,9 @@ def _inventory_owner(session: Session, item_id: str) -> str | None:
 
 
 def _save_shelf(session: Session, resident: Resident, item: ShelfItem, created: bool) -> None:
-    previous = None if created else snowflake_store.fetch_inventory_row(item.id)
+    previous = snowflake_store.fetch_inventory_row(item.id)
+    if isinstance(previous, dict):
+        previous = dict(previous)
     mirrored = False
     try:
         session.flush()
@@ -645,10 +653,10 @@ def _save_shelf(session: Session, resident: Resident, item: ShelfItem, created: 
         _commit_session(session)
     except Exception:
         session.rollback()
-        if mirrored and created:
-            snowflake_store.delete_inventory_by_id(item.id)
-        elif mirrored and previous is not None:
+        if mirrored and previous is not None:
             snowflake_store.upsert_inventory(previous)
+        elif mirrored and created and previous is None:
+            snowflake_store.delete_inventory_by_id(item.id)
         raise
 
 
@@ -907,13 +915,16 @@ def _draft_request(session, resident, message, extraction, catalog) -> dict:
     }
 
 
-def _publish(session: Session, request: Request) -> None:
+def _publish(session: Session, request: Request, commit: bool = True) -> None:
     if snowflake_store.configured():
         snowflake_store.insert_request(_request_dict(request))
         request.status = "synced"
     else:
         request.status = "open"
     session.add(request)
+    if not commit:
+        session.flush()
+        return
     session.commit()
     session.refresh(request)
 
@@ -956,9 +967,6 @@ def _sync_need(session: Session, need: dict) -> dict:
     confirmed = [row for row in existing if row.status == "confirmed"]
     covered = 0
     for handoff in confirmed:
-        covered += sum(row.quantity for row in _allocations(session, handoff.id))
-    proposed_rows = [row for row in existing if row.status == "proposed"]
-    for handoff in proposed_rows:
         covered += sum(row.quantity for row in _allocations(session, handoff.id))
     if covered >= int(need["quantity"]) and confirmed:
         return _match_card(session, confirmed[0], need, complete=True)
@@ -1061,11 +1069,40 @@ def _require_place(borrower: Resident, lender: Resident) -> None:
 
 def _begin_immediate(session: Session) -> None:
     """Take SQLite's write lock before reading how many items are still free."""
+    _meet_booking_peers()
     raw = session.connection().connection
     try:
         raw.execute("BEGIN IMMEDIATE")
-    except Exception:
         return
+    except Exception:
+        pass
+    try:
+        raw.rollback()
+        raw.execute("BEGIN IMMEDIATE")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Could not reserve this item.") from exc
+
+
+def _meet_booking_peers() -> None:
+    gate = os.environ.get("RELAY_BOOKING_GATE", "").strip()
+    if not gate:
+        return
+    folder = Path(gate)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = os.environ.get("RELAY_BOOKING_NAME", "peer")
+    (folder / name).write_text("ready")
+    peers = int(os.environ.get("RELAY_BOOKING_PEERS", "2"))
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        if len(list(folder.iterdir())) >= peers:
+            return
+        time.sleep(0.02)
+    raise HTTPException(status_code=503, detail="Could not reserve this item.")
+
+
+def _require_window(start: datetime, end: datetime) -> None:
+    if end <= start:
+        raise HTTPException(status_code=400, detail="Window end must be after start")
 
 
 def _require_offer(
@@ -1101,10 +1138,10 @@ def _available_quantity(
 ) -> tuple[int | None, int]:
     rows: list[tuple[str, int]] = []
     for shelf in session.exec(select(ShelfItem).where(ShelfItem.resident_id == lender_id)).all():
-        if shelf.available_to_lend and shelf.name.lower() == item.name.lower():
+        if shelf.available_to_lend and _lists_item(session, shelf.name, shelf.catalog_item_id, item):
             rows.append((shelf.id, shelf.quantity))
     for stock in session.exec(select(StockRow).where(StockRow.resident_id == lender_id)).all():
-        if stock.willing_to_lend and stock.catalog_item.lower() == item.name.lower():
+        if stock.willing_to_lend and _lists_item(session, stock.catalog_item, None, item):
             rows.append((stock.id, stock.quantity))
     if inventory_id:
         rows = [row for row in rows if row[0] == inventory_id]
@@ -1123,6 +1160,12 @@ def _available_quantity(
                 continue
         reserved += loan.quantity
     return owned, max(0, owned - reserved)
+
+
+def _lists_item(session: Session, label: str, linked_id: str | None, item: CatalogItem) -> bool:
+    if linked_id:
+        return linked_id == item.id
+    return _catalog_id_for_name(session, label) == item.id
 
 
 def _assert_free(session, lender_id, catalog_item_id, start, end, exclude_id):

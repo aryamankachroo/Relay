@@ -737,3 +737,135 @@ def test_a_new_shelf_item_can_fill_a_project(client):
     assert any(row["resident_id"] == "jordan" for row in drill["neighbors"])
 
 
+def test_a_second_offer_keeps_the_pending_handoff(client):
+    first = _say(client, "jordan", "I have 12 wagons to give away Saturday")
+    assert client.post(f"/api/requests/{first['request_id']}/confirm", json={"resident_id": "jordan"}).status_code == 200
+    need = _say(client, "avery", "I need 20 wagons Saturday")
+    opened = _say(client, "avery", "yes")
+    assert opened["type"] == "match"
+    assert opened["filled_quantity"] == 12
+    assert opened["complete"] is False
+    second = _say(client, "sam", "I have 8 wagons to give away Saturday")
+    updated = client.post(f"/api/requests/{second['request_id']}/confirm", json={"resident_id": "sam"})
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["complete"] is True
+    assert sorted(row["quantity"] for row in body["allocations"]) == [8, 12]
+
+
+def test_failed_remote_only_update_restores_the_row(client, monkeypatch):
+    store = {
+        "remote-ladder": {
+            "inventory_id": "remote-ladder",
+            "resident_id": "avery",
+            "resident_name": "Avery Moss",
+            "catalog_item": "Ladder",
+            "quantity": 1,
+            "willing_to_lend": True,
+            "condition_note": "",
+            "x": 0,
+            "y": 0,
+            "category": "Garden",
+            "condition": "Fair",
+        }
+    }
+
+    def upsert(row):
+        store[row["inventory_id"]] = dict(row)
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert)
+    monkeypatch.setattr("app.logic.snowflake_store.fetch_inventory_row", lambda item_id: dict(store[item_id]) if item_id in store else None)
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", lambda item_id: store.pop(item_id, None))
+    monkeypatch.setattr("app.logic._commit_session", lambda _session: (_ for _ in ()).throw(RuntimeError("sqlite failed")))
+    with pytest.raises(RuntimeError, match="sqlite failed"):
+        client.patch(
+            "/api/inventory/remote-ladder",
+            json={
+                "resident_id": "avery",
+                "name": "Step ladder",
+                "category": "Garden",
+                "quantity": 1,
+                "condition": "Fair",
+                "notes": "",
+                "available_to_lend": True,
+            },
+        )
+    assert store["remote-ladder"]["catalog_item"] == "Ladder"
+
+
+def test_alias_can_be_booked_and_reversed_windows_are_rejected(client):
+    offered = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "jordan",
+            "name": "Step ladder",
+            "category": "Tools",
+            "quantity": 1,
+            "condition": "Good",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert offered.status_code == 201, offered.text
+    booked = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "avery",
+            "lender_id": "jordan",
+            "catalog_item_id": "ladder",
+            "inventory_id": offered.json()["inventory_id"],
+            "window_start": "2026-10-22T09:00:00",
+            "window_end": "2026-10-22T11:00:00",
+        },
+    )
+    assert booked.status_code == 201, booked.text
+    reversed_window = client.post(
+        "/api/loans",
+        json={
+            "borrower_id": "sam",
+            "lender_id": "jordan",
+            "catalog_item_id": "ladder",
+            "inventory_id": offered.json()["inventory_id"],
+            "window_start": "2026-10-23T12:00:00",
+            "window_end": "2026-10-23T11:00:00",
+        },
+    )
+    assert reversed_window.status_code == 400
+    moved = client.post(
+        f"/api/loans/{booked.json()['loan_id']}/respond",
+        json={"action": "propose_time", "window_start": "2026-10-24T15:00:00", "window_end": "2026-10-24T14:00:00"},
+    )
+    assert moved.status_code == 400
+
+
+def test_separate_processes_cannot_double_book(tmp_path):
+    import multiprocessing
+    import os
+
+    from sqlalchemy.pool import NullPool
+    from sqlmodel import Session, SQLModel, create_engine
+
+    from app.models import CatalogItem, Resident, ShelfItem
+    from tests.booking_worker import book
+
+    url = f"sqlite:///{tmp_path / 'book.db'}"
+    engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 5}, poolclass=NullPool)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Resident(id="avery", name="Avery Moss", short_name="Avery", street="14 Willow Court", initials="AM", x=0, y=0, city="Charlotte"))
+        session.add(Resident(id="jordan", name="Jordan Lee", short_name="Jordan", street="16 Willow Court", initials="JL", x=2, y=1, city="Charlotte"))
+        session.add(Resident(id="sam", name="Sam Ortiz", short_name="Sam", street="18 Willow Court", initials="SO", x=3, y=3, city="Charlotte"))
+        session.add(CatalogItem(id="drill", name="Drill", aliases='["drill"]', category="tool", demo_price_cents=1, default_loan_hours=4))
+        session.add(ShelfItem(id="jordan-drill", resident_id="jordan", name="Drill", category="Tools", quantity=1, condition="Good", available_to_lend=True, catalog_item_id="drill"))
+        session.commit()
+    engine.dispose()
+    gate = str(tmp_path / "gate")
+    os.makedirs(gate, exist_ok=True)
+    payload = {"url": url, "gate": gate, "inventory_id": "jordan-drill"}
+    context = multiprocessing.get_context("spawn")
+    with context.Pool(2) as pool:
+        codes = pool.map(book, [{**payload, "name": "avery", "borrower_id": "avery"}, {**payload, "name": "sam", "borrower_id": "sam"}])
+    assert sorted(codes) == [201, 409]
+
+
