@@ -1,3 +1,6 @@
+from datetime import datetime
+
+import pytest
 from sqlmodel import select
 
 from app.catalog import BOOKSHELF_TOOLS
@@ -332,7 +335,7 @@ def test_failed_snowflake_mirror_does_not_keep_the_shelf_row(client, monkeypatch
     def fail(_row):
         raise SnowflakeError("warehouse down")
 
-    monkeypatch.setattr("app.logic.snowflake_store.insert_inventory_if_missing", fail)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", fail)
     response = client.post(
         "/api/inventory",
         json={
@@ -395,3 +398,156 @@ def test_backboard_http_errors_fall_through_to_regex(client, monkeypatch):
     monkeypatch.setattr(httpx, "post", malformed)
     again = _say(client, "jordan", "I need 20 notebooks Saturday morning")
     assert again["type"] == "confirmation"
+
+
+def test_sqlite_failure_removes_the_snowflake_row(client, monkeypatch):
+    remote = {}
+
+    def upsert(row):
+        remote[row["inventory_id"]] = dict(row)
+
+    def delete_id(inventory_id):
+        remote.pop(inventory_id, None)
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert)
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", delete_id)
+    monkeypatch.setattr("app.logic._commit_session", lambda _session: (_ for _ in ()).throw(RuntimeError("sqlite failed")))
+    with pytest.raises(RuntimeError, match="sqlite failed"):
+        client.post(
+            "/api/inventory",
+            json={
+                "resident_id": "avery",
+                "name": "Cooler",
+                "category": "Household",
+                "quantity": 1,
+                "condition": "Good",
+                "notes": "",
+                "available_to_lend": True,
+            },
+        )
+    assert remote == {}
+    listed = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    assert all(row["catalog_item"] != "Cooler" for row in listed["items"])
+
+
+def test_inventory_id_survives_rename(client, monkeypatch):
+    remote = {}
+
+    def upsert(row):
+        remote[row["inventory_id"]] = dict(row)
+
+    monkeypatch.setattr("app.logic.snowflake_store.configured", lambda: True)
+    monkeypatch.setattr("app.logic.snowflake_store.upsert_inventory", upsert)
+    monkeypatch.setattr("app.logic.snowflake_store.delete_inventory_by_id", lambda _item_id: None)
+    monkeypatch.setattr(
+        "app.logic.snowflake_store.fetch_inventory",
+        lambda: {"snowflake": "ok", "items": list(remote.values())},
+    )
+    created = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "avery",
+            "name": "Ladder",
+            "category": "Garden",
+            "quantity": 1,
+            "condition": "Fair",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["inventory_id"]
+    renamed = client.patch(
+        f"/api/inventory/{item_id}",
+        json={
+            "resident_id": "avery",
+            "name": "Step ladder",
+            "category": "Garden",
+            "quantity": 1,
+            "condition": "Fair",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert list(remote) == [item_id]
+    assert remote[item_id]["catalog_item"] == "Step ladder"
+    assert remote[item_id]["category"] == "Garden"
+    listed = client.get("/api/inventory", params={"resident_id": "avery"}).json()
+    row = next(item for item in listed["items"] if item["inventory_id"] == item_id)
+    assert row["catalog_item"] == "Step ladder"
+    assert row["category"] == "Garden"
+    assert row["condition"] == "Fair"
+
+
+def test_two_bookings_cannot_exceed_the_shelf(client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.db import session_scope
+    from app.logic import create_loan
+    from fastapi import HTTPException
+
+    offered = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "jordan",
+            "name": "Drill",
+            "category": "Tools",
+            "quantity": 1,
+            "condition": "Good",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert offered.status_code == 201, offered.text
+    inventory_id = offered.json()["inventory_id"]
+
+    def book(borrower_id):
+        with session_scope() as session:
+            try:
+                create_loan(
+                    session,
+                    borrower_id,
+                    "jordan",
+                    "drill",
+                    datetime.fromisoformat("2026-10-18T09:00:00"),
+                    datetime.fromisoformat("2026-10-18T11:00:00"),
+                    1,
+                    inventory_id,
+                )
+            except HTTPException as exc:
+                return exc.status_code
+            return 201
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        codes = list(pool.map(book, ("avery", "sam")))
+    assert sorted(codes) == [201, 400]
+
+
+def test_two_accounts_keep_a_partial_handoff(client):
+    offer = _say(client, "jordan", "I have 5 wagons to give away Saturday")
+    assert offer["type"] == "confirmation"
+    published = client.post(f"/api/requests/{offer['request_id']}/confirm", json={"resident_id": "jordan"})
+    assert published.status_code == 200, published.text
+    need = _say(client, "avery", "I need 20 wagons Saturday")
+    assert need["type"] == "confirmation"
+    match = _say(client, "avery", "yes")
+    assert match["type"] == "match"
+    assert match["filled_quantity"] == 5
+    handoff_id = match["handoff_id"]
+
+    only_recipient = client.post(f"/api/handoffs/{handoff_id}/confirm", json={"resident_id": "avery"})
+    assert only_recipient.status_code == 200
+    assert only_recipient.json()["status"] == "proposed"
+    outsider = client.post(f"/api/handoffs/{handoff_id}/confirm", json={"resident_id": "sam"})
+    assert outsider.status_code == 403
+    donor = client.post(f"/api/handoffs/{handoff_id}/confirm", json={"resident_id": "jordan"})
+    assert donor.status_code == 200
+    assert donor.json()["status"] == "confirmed"
+    received = client.post(f"/api/handoffs/{handoff_id}/received")
+    assert received.status_code == 200
+    statuses = {row["id"]: row for row in client.get("/api/activity").json()["requests"]}
+    assert statuses[need["request_id"]]["status"] == "open"
+    assert statuses[need["request_id"]]["quantity"] == 15
+

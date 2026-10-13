@@ -106,6 +106,12 @@ class ShelfIn(BaseModel):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    try:
+        from app.snowflake_store import SnowflakeError, ensure_inventory_identity
+
+        ensure_inventory_identity()
+    except SnowflakeError:
+        pass
     with session_scope() as session:
         seed(session)
     ensure_extra_inventory()
@@ -150,7 +156,10 @@ def create_app() -> FastAPI:
         return body
 
     @app.get("/api/residents")
-    def list_residents(session: Session = Depends(get_session)):
+    def list_residents(
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         rows = session.exec(select(Resident)).all()
         return [
             {
@@ -222,7 +231,11 @@ def create_app() -> FastAPI:
         return _profile_out(resident)
 
     @app.post("/api/residents", status_code=201)
-    def create_resident(body: ResidentIn, session: Session = Depends(get_session)):
+    def create_resident(
+        body: ResidentIn,
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         if session.get(Resident, body.id) is not None:
             raise HTTPException(status_code=409, detail="Resident already exists")
         resident = Resident(
@@ -239,7 +252,10 @@ def create_app() -> FastAPI:
         return {"id": resident.id, "name": resident.name, "initials": resident.initials}
 
     @app.get("/api/catalog")
-    def list_catalog(session: Session = Depends(get_session)):
+    def list_catalog(
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         rows = session.exec(select(CatalogItem)).all()
         return [
             {
@@ -456,15 +472,25 @@ def create_app() -> FastAPI:
         return receive_handoff(session, handoff_id, actor)
 
     @app.get("/api/shared-demand")
-    def get_shared_demand(session: Session = Depends(get_session)):
+    def get_shared_demand(
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         return shared_demand(session)
 
     @app.post("/api/shared-demand/{catalog_item_id}/group-buy")
-    def post_group_buy(catalog_item_id: str, session: Session = Depends(get_session)):
+    def post_group_buy(
+        catalog_item_id: str,
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         return start_group_buy(session, catalog_item_id)
 
     @app.get("/api/garden")
-    def get_garden(session: Session = Depends(get_session)):
+    def get_garden(
+        session: Session = Depends(get_session),
+        _actor: str | None = Depends(current_actor),
+    ):
         return garden_count(session)
 
     return app

@@ -1,0 +1,12 @@
+-- Add a stable inventory id without recreating the table.
+-- Run this in Snowsight if the API cannot alter INVENTORY itself.
+-- Do not run setup.sql for this change. setup.sql replaces the tables.
+
+USE ROLE RELAY_APP;
+USE WAREHOUSE RELAY_WH;
+USE DATABASE RELAY;
+USE SCHEMA RELAY.APP;
+
+ALTER TABLE INVENTORY ADD COLUMN IF NOT EXISTS INVENTORY_ID VARCHAR;
+ALTER TABLE INVENTORY ADD COLUMN IF NOT EXISTS CATEGORY VARCHAR;
+ALTER TABLE INVENTORY ADD COLUMN IF NOT EXISTS CONDITION VARCHAR;

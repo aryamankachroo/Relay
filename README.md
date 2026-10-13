@@ -39,7 +39,7 @@ Each example file says where the real values go. Do not commit those files.
 
 `.env.local` and `backend/.env` are gitignored. Example files must stay placeholders.
 
-The Clerk **secret key** goes in `backend/.env` as `CLERK_SECRET_KEY`. The publishable key stays in `.env.local`. You do not paste a session token. After sign-in the app sends it as `Authorization: Bearer` on each API call, and the API uses that account as the resident.
+The Clerk **secret key** goes in `backend/.env` as `CLERK_SECRET_KEY`. Set `CLERK_ISSUER` to the Frontend API URL from the Clerk dashboard, such as `https://your-app.clerk.accounts.dev`. The publishable key stays in `.env.local`. You do not paste a session token. After sign-in the app sends it as `Authorization: Bearer` on each API call, and the API uses that account as the resident.
 
 ## First visit
 

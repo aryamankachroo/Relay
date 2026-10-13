@@ -7,7 +7,7 @@ import httpx
 import jwt
 from fastapi import HTTPException, Request
 
-from app.config import clerk_secret_key
+from app.config import clerk_issuer, clerk_secret_key
 
 _jwks: dict = {"at": 0.0, "body": None}
 
@@ -46,7 +46,9 @@ def _subject(token: str) -> str:
         if match is None:
             raise HTTPException(status_code=401, detail="Sign in again so Relay can verify this request.")
         key = jwt.PyJWK.from_dict(match).key
-        payload = jwt.decode(token, key, algorithms=["RS256"], options={"verify_aud": False})
+        options = {"verify_aud": False, "verify_iss": bool(clerk_issuer())}
+        decode_args = {"issuer": clerk_issuer()} if clerk_issuer() else {}
+        payload = jwt.decode(token, key, algorithms=["RS256"], options=options, **decode_args)
     except HTTPException:
         raise
     except Exception as exc:

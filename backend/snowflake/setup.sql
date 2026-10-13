@@ -17,6 +17,7 @@ USE SCHEMA RELAY.APP;
 
 -- Columns match INVENTORY_SQL in app/snowflake_store.py.
 CREATE OR REPLACE TABLE INVENTORY (
+    INVENTORY_ID      VARCHAR,
     RESIDENT_ID       VARCHAR      NOT NULL,
     RESIDENT_NAME     VARCHAR      NOT NULL,
     X                 NUMBER(6,0)  NOT NULL,
@@ -25,7 +26,9 @@ CREATE OR REPLACE TABLE INVENTORY (
     QUANTITY          NUMBER(6,0)  NOT NULL DEFAULT 1,
     WILLING_TO_LEND   BOOLEAN      NOT NULL DEFAULT TRUE,
     CONDITION_NOTE    VARCHAR,
-    AVAILABLE_WINDOWS VARIANT                 -- [["start ISO","end ISO"], ...] in UTC
+    AVAILABLE_WINDOWS VARIANT,                -- [["start ISO","end ISO"], ...] in UTC
+    CATEGORY          VARCHAR,
+    CONDITION         VARCHAR
 );
 
 -- Columns match REQUEST_INSERT_SQL in app/snowflake_store.py.

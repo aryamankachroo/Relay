@@ -127,7 +127,7 @@ CATALOG = (
     {"id": "fan", "name": "Fan", "aliases": ["fan"], "category": "household", "demo_price_cents": 3000, "default_loan_hours": 24},
     {"id": "vacuum", "name": "Vacuum", "aliases": ["vacuum", "vacuum cleaner"], "category": "household", "demo_price_cents": 9000, "default_loan_hours": 8},
     {"id": "stroller", "name": "Stroller", "aliases": ["stroller"], "category": "household", "demo_price_cents": 10000, "default_loan_hours": 8},
-    {"id": "wagon", "name": "Wagon", "aliases": ["wagon"], "category": "garden", "demo_price_cents": 6000, "default_loan_hours": 8},
+    {"id": "wagon", "name": "Wagon", "aliases": ["wagon", "wagons"], "category": "garden", "demo_price_cents": 6000, "default_loan_hours": 8},
     {"id": "air-mattress", "name": "Air mattress", "aliases": ["air mattress"], "category": "household", "demo_price_cents": 3500, "default_loan_hours": 48},
 )
 
