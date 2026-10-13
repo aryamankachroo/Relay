@@ -43,3 +43,11 @@ def gemini_api_key() -> str:
 
 def gemini_model() -> str:
     return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+
+
+def backboard_api_key() -> str:
+    return os.environ.get("BACKBOARD_API_KEY", "").strip()
+
+
+def backboard_model() -> str:
+    return os.environ.get("BACKBOARD_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"

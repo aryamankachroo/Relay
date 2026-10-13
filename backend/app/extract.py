@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from app.clock import aware, now as utcnow
 
 from app.catalog import BOOKSHELF_TOOLS, is_bookshelf, match_catalog, mentioned_items
-from app.config import gemini_api_key, gemini_model
+from app.config import backboard_api_key, backboard_model, gemini_api_key, gemini_model
 from app.models import CatalogItem
 
 log = logging.getLogger(__name__)
@@ -44,6 +44,9 @@ def extract_message(text: str, catalog: list[CatalogItem], now: datetime | None 
     gemini = _from_gemini(text, catalog, moment)
     if gemini is not None:
         return gemini
+    backboard = _from_backboard(text, catalog, moment)
+    if backboard is not None:
+        return backboard
     return _fallback(text, catalog, moment)
 
 
@@ -114,6 +117,54 @@ def _from_gemini(text: str, catalog: list[CatalogItem], now: datetime) -> Extrac
         if isinstance(payload, dict):
             return _extraction_from_payload(payload, text, catalog, now)
         log.warning("Gemini attempt %d gave an unparseable reply: %.200r", attempt, response.text)
+    return None
+
+
+def _from_backboard(text: str, catalog: list[CatalogItem], now: datetime) -> Extraction | None:
+    key = backboard_api_key()
+    if not key:
+        return None
+    names = ", ".join(item.name for item in catalog)
+    prompt = (
+        "Turn this neighborhood-sharing message into JSON only. "
+        "intent is project, need, or offer. "
+        f"The catalog is: {names}. "
+        "For a need or offer, name only items from the catalog. "
+        f"For a project, list the tools the job needs, at most {MAX_PROJECT_TOOLS}: "
+        "use the exact catalog name when the tool is in the catalog, "
+        "otherwise a short plain tool name. "
+        "Use null for unknown window or area. quantity is a positive integer.\n"
+        '{"intent":"need","items":[{"name":"Notebooks","quantity":20,"optional":false}],'
+        '"window_start":null,"window_end":null,"area":null}\n'
+        f"Message: {text}"
+    )
+    try:
+        import httpx
+
+        response = httpx.post(
+            "https://app.backboard.io/api/threads/messages",
+            headers={"X-API-Key": key, "Content-Type": "application/json"},
+            json={
+                "content": prompt,
+                "llm_provider": "google",
+                "model_name": backboard_model(),
+                "stream": False,
+                "memory": "off",
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except Exception as exc:
+        log.warning("Backboard failed: %s: %s", type(exc).__name__, exc)
+        return None
+    raw = body.get("content") if isinstance(body, dict) else None
+    if not isinstance(raw, str):
+        raw = body.get("message") if isinstance(body, dict) else None
+    payload = _parse_json(raw or "")
+    if isinstance(payload, dict):
+        return _extraction_from_payload(payload, text, catalog, now)
+    log.warning("Backboard gave an unparseable reply: %.200r", raw)
     return None
 
 
