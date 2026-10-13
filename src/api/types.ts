@@ -174,6 +174,8 @@ export type ApiInventoryItem = {
   quantity: number
   willing_to_lend: boolean
   condition_note: string
+  x?: number
+  y?: number
   distance?: number
   city?: string
 }

@@ -2,10 +2,9 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { GeoJSONSource, Map as MapboxMap, Marker } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import {
-  demoExploreBounds,
   demoMapBackdrop,
-  demoResidentBounds,
   linksForResident,
+  listingMapBounds,
   type SceneResident,
   type ShareLink,
 } from '../data/neighborhood.ts'
@@ -76,16 +75,16 @@ export function NeighborhoodMap({
           if (!cancelled && !mapRef.current) setFailed(true)
         }, 15000)
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        const [[west, south], [east, north]] = demoResidentBounds()
+        const [[west, south], [east, north]] = listingMapBounds()
         map = new mapboxgl.Map({
           accessToken: token,
           container,
           style: MAP_STYLE,
           center: [(west + east) / 2, (south + north) / 2],
-          zoom: 15.4,
-          minZoom: demoMapBackdrop.minZoom,
+          zoom: 13,
+          minZoom: 10,
           maxZoom: demoMapBackdrop.maxZoom,
-          maxBounds: demoExploreBounds(),
+          maxBounds: listingMapBounds(),
           minPitch: 0,
           maxPitch: 0,
           pitchWithRotate: false,
@@ -112,9 +111,9 @@ export function NeighborhoodMap({
           if (cancelled || !map) return
           window.clearTimeout(timer)
           bumpSize()
-          map.fitBounds(demoResidentBounds(), {
+          map.fitBounds(listingMapBounds(), {
             padding: viewPadding(),
-            maxZoom: 16.5,
+            maxZoom: 14,
             duration: 0,
           })
           bumpSize()
@@ -172,6 +171,11 @@ export function NeighborhoodMap({
       markersRef.current = residents.map((resident) =>
         createMarker(mapboxgl, map, resident, links, lendingIds.has(resident.id), handlersRef),
       )
+      if (residents.length > 0) {
+        const bounds = new mapboxgl.LngLatBounds()
+        for (const resident of residents) bounds.extend([resident.longitude, resident.latitude])
+        map.fitBounds(bounds, { padding: 48, maxZoom: 15, animate: false })
+      }
       applySelection(markersRef.current, selectedIdRef.current)
     })
 
@@ -198,12 +202,24 @@ export function NeighborhoodMap({
     const map = mapRef.current
     if (!map) return
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    map.fitBounds(demoResidentBounds(), {
-      padding: viewPadding(),
-      maxZoom: 16.5,
-      pitch: 0,
-      bearing: 0,
-      duration: reduceMotion ? 0 : 650,
+    const people = residentsRef.current
+    void import('mapbox-gl/esm').then((mapboxgl) => {
+      if (mapRef.current !== map) return
+      const frame = new mapboxgl.LngLatBounds()
+      if (people.length === 0) {
+        const [[west, south], [east, north]] = listingMapBounds()
+        frame.extend([west, south])
+        frame.extend([east, north])
+      } else {
+        for (const resident of people) frame.extend([resident.longitude, resident.latitude])
+      }
+      map.fitBounds(frame, {
+        padding: viewPadding(),
+        maxZoom: 15,
+        pitch: 0,
+        bearing: 0,
+        duration: reduceMotion ? 0 : 650,
+      })
     })
   }
 

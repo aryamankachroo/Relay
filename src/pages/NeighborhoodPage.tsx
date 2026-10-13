@@ -3,17 +3,14 @@ import { Map, X } from 'lucide-react'
 import { GlassCard } from '../components/GlassCard.tsx'
 import { NeighborhoodMap } from '../components/NeighborhoodMap.tsx'
 import { demoCommunityLabel, demoResident } from '../data/index.ts'
+import { useCurrentResident } from '../state/currentResident.ts'
 import {
-  itemsForResident,
   linksForResident,
-  sceneResidentById,
-  sceneResidents,
-  shareLinksFromLoans,
+  residentsFromListings,
+  shareLinksBetween,
   type SceneResident,
-  type SceneResidentId,
 } from '../data/neighborhood.ts'
 import { givenName, loanStatusCopy, type LoanRequest } from '../data/lending.ts'
-import { useInventory } from '../state/inventoryStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
 import { useShelfResident } from '../state/shelfResidentStore.ts'
 import { api } from '../api/client.ts'
@@ -24,11 +21,11 @@ type MapFilter = 'all' | 'lending' | 'loans'
 export function NeighborhoodPage() {
   const headingId = useId()
   const panelRef = useRef<HTMLElement>(null)
-  const { items } = useInventory()
   const { requests: loans } = useLoanRequests()
   const shelfId = useShelfResident()
+  const you = useCurrentResident()
   const [liveItems, setLiveItems] = useState<ApiInventoryItem[]>([])
-  const [selectedId, setSelectedId] = useState<SceneResidentId | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
   const [filter, setFilter] = useState<MapFilter>('all')
   const [query, setQuery] = useState('')
@@ -60,20 +57,31 @@ export function NeighborhoodPage() {
     })
   }, [liveItems, query])
 
-  const links = useMemo(() => shareLinksFromLoans(loans), [loans])
+  const people = useMemo(
+    () =>
+      residentsFromListings(
+        {
+          id: shelfId,
+          name: you.name || 'You',
+          initials: you.initials || 'YO',
+          street: you.street,
+        },
+        liveItems,
+      ),
+    [liveItems, shelfId, you.initials, you.name, you.street],
+  )
+  const links = useMemo(() => shareLinksBetween(loans, shelfId), [loans, shelfId])
   const lendingIds = useMemo(() => {
     const ids = new Set<string>()
-    for (const resident of sceneResidents) {
-      if (itemsForResident(resident.id, items, loans).length > 0 || (resident.offers?.length ?? 0) > 0) {
-        ids.add(resident.id)
-      }
+    for (const resident of people) {
+      if ((resident.offers?.length ?? 0) > 0) ids.add(resident.id)
     }
     return ids
-  }, [items, loans])
+  }, [people])
 
   const visibleResidents = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return sceneResidents.filter((resident) => {
+    return people.filter((resident) => {
       if (filter === 'lending' && !lendingIds.has(resident.id)) return false
       if (filter === 'loans') {
         const onLoan = links.some(
@@ -82,13 +90,10 @@ export function NeighborhoodPage() {
         if (!onLoan) return false
       }
       if (!needle) return true
-      const offered = itemsForResident(resident.id, items, loans).map((item) => item.name)
-      const haystack = [resident.name, resident.street, ...(resident.offers ?? []), ...offered]
-        .join(' ')
-        .toLowerCase()
+      const haystack = [resident.name, resident.street, ...(resident.offers ?? [])].join(' ').toLowerCase()
       return haystack.includes(needle)
     })
-  }, [filter, items, lendingIds, links, loans, query])
+  }, [filter, lendingIds, links, people, query])
 
   const visibleIds = useMemo(
     () => new Set(visibleResidents.map((resident) => resident.id)),
@@ -103,15 +108,11 @@ export function NeighborhoodPage() {
   const activeLinkId =
     selectedLinkId && visibleLinks.some((link) => link.id === selectedLinkId) ? selectedLinkId : null
 
-  const selected = activeResidentId ? sceneResidentById(activeResidentId) : null
+  const selected = activeResidentId ? people.find((resident) => resident.id === activeResidentId) ?? null : null
   const selectedItems = useMemo(() => {
-    if (!activeResidentId) return []
-    const listed = itemsForResident(activeResidentId, items, loans)
-    const extras = (sceneResidentById(activeResidentId)?.offers ?? [])
-      .filter((name) => !listed.some((item) => item.name === name))
-      .map((name) => ({ id: name, name, detail: 'Ready to lend' }))
-    return [...listed, ...extras]
-  }, [activeResidentId, items, loans])
+    if (!selected) return []
+    return (selected.offers ?? []).map((name) => ({ id: name, name, detail: 'Ready to lend' }))
+  }, [selected])
   const selectedLoan = activeLinkId ? (loans.find((loan) => loan.id === activeLinkId) ?? null) : null
   const activeLinks = links.filter((link) => link.active)
   const pendingLinks = links.filter((link) => !link.active)
@@ -124,9 +125,9 @@ export function NeighborhoodPage() {
   }, [activeResidentId, activeLinkId])
 
   function selectResident(id: string) {
-    if (!sceneResidentById(id)) return
+    if (!people.some((resident) => resident.id === id)) return
     setSelectedLinkId(null)
-    setSelectedId(id as SceneResidentId)
+    setSelectedId(id)
   }
 
   function selectLink(id: string) {
@@ -143,7 +144,7 @@ export function NeighborhoodPage() {
         ? 'Nobody has something listed to lend.'
         : null
 
-  const lendingCount = sceneResidents.filter((resident) => lendingIds.has(resident.id)).length
+  const lendingCount = people.filter((resident) => lendingIds.has(resident.id)).length
 
   return (
     <section className="hood-page" aria-labelledby={headingId}>
@@ -176,7 +177,7 @@ export function NeighborhoodPage() {
         <div className="hood-filters" role="group" aria-label="Show residents">
           <FilterButton
             pressed={filter === 'all'}
-            count={sceneResidents.length}
+            count={people.length}
             onClick={() => setFilter('all')}
           >
             All
@@ -229,6 +230,8 @@ export function NeighborhoodPage() {
             {selectedLoan ? (
               <LoanCard
                 loan={selectedLoan}
+                people={people}
+                youId={shelfId}
                 onClose={() => setSelectedLinkId(null)}
                 onSelectResident={selectResident}
               />
@@ -386,16 +389,24 @@ function ResidentCard({
 
 function LoanCard({
   loan,
+  people,
+  youId,
   onClose,
   onSelectResident,
 }: {
   loan: LoanRequest
+  people: readonly SceneResident[]
+  youId: string
   onClose: () => void
   onSelectResident: (id: string) => void
 }) {
-  const lender = sceneResidentById(loan.lenderId)
-  const borrowerId = loan.borrowerId ?? (loan.lenderId === 'resident-avery' ? null : 'resident-avery')
-  const borrower = borrowerId ? sceneResidentById(borrowerId) : null
+  const party = (id: string | undefined) => {
+    if (!id) return null
+    const resolved = id === 'resident-avery' ? youId : id
+    return people.find((resident) => resident.id === resolved) ?? null
+  }
+  const lender = party(loan.lenderId)
+  const borrower = party(loan.borrowerId)
   const active = loan.status !== 'Requested' && loan.status !== 'Returned'
 
   return (
