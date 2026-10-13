@@ -26,6 +26,7 @@ function SignedInApp() {
   const [readyId, setReadyId] = useState<string | null>(null)
   const [shelfId, setShelfId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!resident.id) return
@@ -53,10 +54,19 @@ function SignedInApp() {
     return () => {
       cancel = true
     }
-  }, [resident.id, resident.name, resident.email, resident.initials, resident.street])
+  }, [attempt, resident.id, resident.name, resident.email, resident.initials, resident.street])
 
   if (!resident.id || !shelfId || readyId !== resident.id) {
-    return <p className="hint">{error || 'Loading your shelf…'}</p>
+    return (
+      <div className="hint">
+        <p>{error || 'Loading your shelf…'}</p>
+        {error ? (
+          <button type="button" className="loan-lender" onClick={() => setAttempt((value) => value + 1)}>
+            Try again
+          </button>
+        ) : null}
+      </div>
+    )
   }
 
   return (
