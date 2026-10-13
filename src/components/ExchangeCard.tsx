@@ -600,6 +600,9 @@ function HandoffReceipt({
       </div>
       <StatusTimeline steps={handoffStatusSteps} current={handoff.status} />
       <p className="loan-state-copy">{handoffStatusCopy(handoff, request.quantity)}</p>
+      {complete && request.outstanding > 0 ? (
+        <p className="loan-state-copy">{formatItemQuantity(request.outstanding, request.item)} still open.</p>
+      ) : null}
       <ul className="match-list">
         {handoff.parts.map((part) => (
           <li key={part.listingId} className="exchange-part">

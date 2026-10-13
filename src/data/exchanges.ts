@@ -21,6 +21,9 @@ export type ExchangeRequest = ExchangeDraft & {
   id: string
   status: 'Open' | 'Matched'
   fulfilled: number
+  delivered: number
+  reserved: number
+  outstanding: number
 }
 
 export type HandoffPart = {

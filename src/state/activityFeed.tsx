@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { createDirectory, type Directory } from '../api/adapt.ts'
+import { createDirectory, missingResidentIds, type Directory } from '../api/adapt.ts'
 import { api } from '../api/client.ts'
 import type { ApiActivity } from '../api/types.ts'
 import { ActivityFeedContext } from './activityFeedStore.ts'
@@ -15,14 +15,18 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextActivity, residents, catalog] = await Promise.all([
-        api.activity(),
-        directoryRef.current ? null : api.residents(),
-        directoryRef.current ? null : api.catalog(),
-      ])
-      if (residents && catalog) {
-        directoryRef.current = createDirectory(residents, catalog)
-        setDirectory(directoryRef.current)
+      const nextActivity = await api.activity()
+      let nextDirectory = directoryRef.current
+      const missing = nextDirectory ? missingResidentIds(nextActivity, nextDirectory) : ['catalog']
+      if (!nextDirectory || missing.length > 0) {
+        const [residents, catalog] = await Promise.all([
+          api.residents(),
+          nextDirectory ? Promise.resolve(null) : api.catalog(),
+        ])
+        const catalogRows = catalog ?? (nextDirectory ? [...nextDirectory.catalog.values()] : [])
+        nextDirectory = createDirectory(residents, catalogRows)
+        directoryRef.current = nextDirectory
+        setDirectory(nextDirectory)
       }
       setActivity(nextActivity)
       setError(null)

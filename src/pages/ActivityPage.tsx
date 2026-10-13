@@ -125,6 +125,9 @@ export function ActivityPage() {
                     exchanges.find((exchange) => exchange.id === item.record.requestId)?.quantity ??
                     item.record.quantity
                   }
+                  outstanding={
+                    exchanges.find((exchange) => exchange.id === item.record.requestId)?.outstanding ?? 0
+                  }
                   onAdvance={() => advanceHandoff(item.record.id)}
                 />
               )}
@@ -263,10 +266,12 @@ function LoanActivityCard({ loan, onAdvance }: { loan: LoanRequest; onAdvance: (
 function HandoffActivityCard({
   handoff,
   requestQuantity,
+  outstanding,
   onAdvance,
 }: {
   handoff: HandoffRecord
   requestQuantity: number
+  outstanding: number
   onAdvance: () => Promise<string | null>
 }) {
   const titleId = useId()
@@ -345,6 +350,9 @@ function HandoffActivityCard({
         </div>
         <StatusTimeline steps={handoffStatusSteps} current={handoff.status} />
         <p className="loan-state-copy">{handoffStatusCopy(handoff, requestQuantity)}</p>
+        {complete && outstanding > 0 ? (
+          <p className="loan-state-copy">{formatItemQuantity(outstanding, handoff.item)} still open.</p>
+        ) : null}
         {action ? (
           <>
             <button

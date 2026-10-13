@@ -18,6 +18,7 @@ import {
   type ToolCondition,
   type ToolPortraitId,
 } from '../data/lending.ts'
+import { coverageFor, type AllocationSlice } from './coverage.ts'
 import type {
   ApiActivity,
   ApiCatalogItem,
@@ -49,6 +50,36 @@ const demoTimeZone = 'UTC'
 const hour = 60 * 60 * 1000
 const pickupLength = 2 * hour
 const day = 24 * hour
+
+export function missingResidentIds(activity: ApiActivity, directory: Directory) {
+  return participantIds(activity).filter((id) => !directory.residents.has(id))
+}
+
+export function participantIds(activity: ApiActivity) {
+  const ids = new Set<string>()
+  for (const request of activity.requests) ids.add(request.resident_id)
+  for (const loan of activity.loans) {
+    ids.add(loan.borrower_id)
+    ids.add(loan.lender_id)
+  }
+  for (const handoff of activity.handoffs) {
+    ids.add(handoff.recipient_id)
+    for (const row of handoff.allocations) ids.add(row.resident_id)
+  }
+  ids.delete('')
+  return [...ids]
+}
+
+function allocationSlices(handoffs: readonly ApiHandoff[]): AllocationSlice[] {
+  return handoffs.flatMap((handoff) =>
+    handoff.allocations.map((row) => ({
+      status: handoff.status,
+      quantity: row.quantity,
+      needId: handoff.need_request_id,
+      offerId: row.offer_request_id,
+    })),
+  )
+}
 
 export function createDirectory(residents: ApiResident[], catalog: ApiCatalogItem[]): Directory {
   return {
@@ -187,29 +218,27 @@ export function exchangeRequestsFromApi(
     if (request.resident_id !== viewerId) return []
     if (request.kind !== 'need' && request.kind !== 'offer') return []
     if (hiddenRequestStatuses.has(request.status)) return []
-    const arranged =
-      request.kind === 'need'
-        ? live
-            .filter((handoff) => handoff.need_request_id === request.id)
-            .flatMap((handoff) => handoff.allocations)
-        : live
-            .flatMap((handoff) => handoff.allocations)
-            .filter((row) => row.offer_request_id === request.id)
-    const quantity = Math.max(request.quantity, 1)
-    const fulfilled = Math.min(
-      quantity,
-      arranged.reduce((sum, row) => sum + row.quantity, 0),
+    const slices = allocationSlices(live)
+    const coverage = coverageFor(
+      request.kind === 'offer' ? 'offer' : 'need',
+      request.id,
+      request.quantity,
+      slices,
     )
+    const quantity = coverage.outstanding
     return [
       {
         id: request.id,
         kind: request.kind,
-        item: itemLabel(catalogName(directory, request.catalog_item_id), quantity),
+        item: itemLabel(catalogName(directory, request.catalog_item_id), Math.max(quantity, 1)),
         quantity,
         pickupArea: request.area || demoResident.street,
         windowLabel: formatWindow(request.window),
-        status: fulfilled >= quantity ? 'Matched' : 'Open',
-        fulfilled,
+        status: coverage.status,
+        fulfilled: coverage.fulfilled,
+        delivered: coverage.delivered,
+        reserved: coverage.reserved,
+        outstanding: coverage.outstanding,
       },
     ]
   })

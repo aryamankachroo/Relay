@@ -23,5 +23,6 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "app", ".react-router/types"]
+  "include": ["src", "app", ".react-router/types"],
+  "exclude": ["src/**/*.test.ts"]
 }
