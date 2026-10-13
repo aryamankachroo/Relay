@@ -15,7 +15,8 @@ SNOWFLAKE_KEYS = (
 )
 
 AVERY_ID = "avery"
-DISTANCE_LIMIT = 25
+# A city is much larger than a block. 400 is the within-city radius on the block grid.
+DISTANCE_LIMIT = 400
 LOAN_BUFFER_MINUTES = 30
 
 

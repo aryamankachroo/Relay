@@ -49,8 +49,23 @@ export const api = {
   confirmRequest: (residentId: string, requestId: string) =>
     post<ApiChatCard>(`/api/requests/${requestId}/confirm`, { resident_id: residentId }),
   residents: () => request<ApiResident[]>('/api/residents'),
-  saveProfile: (body: { clerk_user_id: string; name: string; email: string; initials: string; street: string }) =>
-    post<{ id: string; name: string; resident_id: string }>('/api/me', body),
+  saveProfile: (body: {
+    clerk_user_id: string
+    name: string
+    email: string
+    initials: string
+    street: string
+    city?: string
+    about?: string
+  }) =>
+    post<{ id: string; name: string; resident_id: string; city: string; about: string; onboarded: boolean }>(
+      '/api/me',
+      body,
+    ),
+  profile: (clerkUserId: string) =>
+    request<{ resident_id: string | null; city: string; about: string; onboarded: boolean }>(
+      `/api/me?clerk_user_id=${encodeURIComponent(clerkUserId)}`,
+    ),
   inventory: (residentId: string) =>
     request<ApiInventory>(`/api/inventory?resident_id=${encodeURIComponent(residentId)}`),
   createInventory: (

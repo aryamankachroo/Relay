@@ -28,7 +28,7 @@ from app import snowflake_store
 
 BUFFER = timedelta(minutes=LOAN_BUFFER_MINUTES)
 ACTIVE_LOAN = ("requested", "confirmed", "picked_up")
-ACTIVE_HANDOFF = ("proposed", "confirmed", "received")
+RESERVED_HANDOFF = ("proposed", "confirmed")
 DEMAND_KINDS = ("need", "borrow")
 
 
@@ -127,9 +127,15 @@ def create_loan(
     inventory_id: str | None = None,
 ) -> dict:
     _resident(session, borrower_id)
+    lender = _resident(session, lender_id)
     item = _catalog_item(session, catalog_item_id)
+    if borrower_id == lender_id:
+        raise HTTPException(status_code=400, detail="You cannot borrow from yourself")
     window_start = aware(window_start)
     window_end = aware(window_end)
+    if window_end <= now():
+        raise HTTPException(status_code=400, detail="That window is already over")
+    _require_offer(session, lender, item, quantity, inventory_id)
     slot = _assert_free(session, lender_id, catalog_item_id, window_start, window_end, None)
     if slot is not True:
         _conflict(slot)
@@ -185,6 +191,9 @@ def respond_loan(
     elif action == "accept":
         if loan.status != "requested":
             raise HTTPException(status_code=409, detail="Only a requested loan can be accepted")
+        item = _catalog_item(session, loan.catalog_item_id)
+        lender = _resident(session, loan.lender_id)
+        _require_offer(session, lender, item, loan.quantity, loan.inventory_id)
         slot = _assert_free(
             session,
             loan.lender_id,
@@ -291,7 +300,9 @@ def receive_handoff(session: Session, handoff_id: str) -> dict:
     session.add(handoff)
     need = _find_request(session, handoff.need_request_id)
     if need is not None:
-        _set_request_status(session, need["id"], "closed", quantity=need["quantity"])
+        received_qty = sum(row.quantity for row in _allocations(session, handoff.id))
+        left = max(0, int(need["quantity"]) - received_qty)
+        _set_request_status(session, need["id"], "closed" if left == 0 else "open", quantity=left)
     for allocation in _allocations(session, handoff.id):
         offer = _find_request(session, allocation.offer_request_id)
         if offer is None:
@@ -577,10 +588,13 @@ def neighborhood(session: Session, resident_id: str) -> dict:
     for row in view["items"]:
         if row["resident_id"] == resident.id or not row["willing_to_lend"]:
             continue
+        owner = session.get(Resident, row["resident_id"])
+        if resident.city and owner is not None and owner.city and resident.city.casefold() != owner.city.casefold():
+            continue
         distance = abs(float(row["x"]) - resident.x) + abs(float(row["y"]) - resident.y)
         if distance > DISTANCE_LIMIT:
             continue
-        items.append({**row, "distance": distance})
+        items.append({**row, "distance": distance, "city": owner.city if owner else ""})
     items.sort(key=lambda row: (row["distance"], row["resident_name"]))
     return {"snowflake": view["snowflake"], "resident_id": resident.id, "items": items}
 
@@ -811,6 +825,12 @@ def _sync_need(session: Session, need: dict) -> dict:
     for row in _open_requests(session):
         if row["kind"] != "offer" or row["catalog_item_id"] != need["catalog_item_id"]:
             continue
+        if row["resident_id"] == need["resident_id"]:
+            continue
+        if not _windows_compatible(need, row):
+            continue
+        if not _same_city(session, need["resident_id"], row["resident_id"]):
+            continue
         available = int(row["quantity"]) - _allocated_elsewhere(session, row["id"], exclude)
         if available > 0:
             offers.append(Supply(row["id"], row["resident_id"], available))
@@ -863,9 +883,59 @@ def _allocated_elsewhere(session: Session, offer_id: str, exclude_handoff: str |
         if exclude_handoff and row.handoff_id == exclude_handoff:
             continue
         handoff = session.get(Handoff, row.handoff_id)
-        if handoff and handoff.status in ACTIVE_HANDOFF:
+        if handoff and handoff.status in RESERVED_HANDOFF:
             total += row.quantity
     return total
+
+
+def _windows_compatible(need: dict, offer: dict) -> bool:
+    start = need.get("window_start")
+    end = need.get("window_end")
+    other_start = offer.get("window_start")
+    other_end = offer.get("window_end")
+    if not start or not end or not other_start or not other_end:
+        return True
+    return overlaps(start, end, other_start, other_end)
+
+
+def _same_city(session: Session, left_id: str, right_id: str) -> bool:
+    left = session.get(Resident, left_id)
+    right = session.get(Resident, right_id)
+    if left is None or right is None or not left.city or not right.city:
+        return True
+    return left.city.casefold() == right.city.casefold()
+
+
+def _require_offer(session: Session, lender: Resident, item: CatalogItem, quantity: int, inventory_id: str | None) -> None:
+    available = _available_quantity(session, lender.id, item, inventory_id)
+    if available is None:
+        raise HTTPException(status_code=404, detail="That lender is not offering this item")
+    if quantity > available:
+        raise HTTPException(status_code=400, detail="Not enough of that item is available to lend")
+
+
+def _available_quantity(session: Session, lender_id: str, item: CatalogItem, inventory_id: str | None) -> int | None:
+    rows: list[tuple[str, int]] = []
+    for shelf in session.exec(select(ShelfItem).where(ShelfItem.resident_id == lender_id)).all():
+        if shelf.available_to_lend and shelf.name.lower() == item.name.lower():
+            rows.append((shelf.id, shelf.quantity))
+    for stock in session.exec(select(StockRow).where(StockRow.resident_id == lender_id)).all():
+        if stock.willing_to_lend and stock.catalog_item.lower() == item.name.lower():
+            rows.append((stock.id, stock.quantity))
+    if inventory_id:
+        rows = [row for row in rows if row[0] == inventory_id]
+    if not rows:
+        return None
+    owned = sum(quantity for _row_id, quantity in rows)
+    ids = {row_id for row_id, _quantity in rows}
+    reserved = 0
+    for loan in session.exec(select(Loan).where(Loan.lender_id == lender_id, Loan.catalog_item_id == item.id)).all():
+        if loan.status not in ACTIVE_LOAN:
+            continue
+        if loan.inventory_id and loan.inventory_id not in ids:
+            continue
+        reserved += loan.quantity
+    return max(0, owned - reserved)
 
 
 def _assert_free(session, lender_id, catalog_item_id, start, end, exclude_id):

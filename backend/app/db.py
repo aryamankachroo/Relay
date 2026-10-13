@@ -30,7 +30,23 @@ def get_engine():
 def init_db() -> None:
     import app.models  # noqa: F401
 
-    SQLModel.metadata.create_all(get_engine())
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    _ensure_resident_columns(engine)
+
+
+def _ensure_resident_columns(engine) -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "resident" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("resident")}
+    with engine.begin() as connection:
+        if "city" not in columns:
+            connection.execute(text("ALTER TABLE resident ADD COLUMN city VARCHAR DEFAULT ''"))
+        if "about" not in columns:
+            connection.execute(text("ALTER TABLE resident ADD COLUMN about VARCHAR DEFAULT ''"))
 
 
 def reset_db() -> None:

@@ -11,6 +11,8 @@ class Resident(SQLModel, table=True):
     initials: str
     x: float = 0
     y: float = 0
+    city: str = ""
+    about: str = ""
 
 
 class CatalogItem(SQLModel, table=True):

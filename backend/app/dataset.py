@@ -1,29 +1,26 @@
-"""Deterministic inventory large enough for load tests.
-
-Drills stay outside the neighborhood distance limit so a nearby drill request
-still becomes a shared purchase.
-"""
-
-from app.config import DISTANCE_LIMIT
+"""Deterministic inventory large enough for load tests."""
 
 TARGET_ROWS = 5000
 
 ITEM_NAMES = (
-    "Saw",
-    "Level",
-    "Sander",
-    "Clamps",
-    "Tape measure",
-    "Notebooks",
-    "Ladder",
-    "Garden hose",
-    "Extension cord",
+    "Chair",
+    "Bike",
+    "Tent",
+    "Cooler",
+    "Blender",
+    "Fan",
+    "Vacuum",
+    "Stroller",
+    "Wagon",
+    "Air mattress",
     "Folding table",
+    "Extension cord",
+    "Garden hose",
+    "Ladder",
+    "Saw",
     "Soccer ball",
-    "Mixing bowl",
-    "Hedge trimmer",
 )
-FAR_ONLY = ("Drill",)
+CITIES = ("Charlotte", "Raleigh", "Durham", "Atlanta")
 
 
 def inventory_rows(count: int = TARGET_ROWS) -> list[dict]:
@@ -33,10 +30,10 @@ def inventory_rows(count: int = TARGET_ROWS) -> list[dict]:
     while len(rows) < count:
         x = (resident_index % 30) - 10
         y = resident_index // 30
-        distance = abs(x) + abs(y)
-        names = ITEM_NAMES + (FAR_ONLY if distance > DISTANCE_LIMIT else ())
+        names = ITEM_NAMES
         resident_id = f"block-{resident_index:04d}"
         resident_name = f"Neighbor {resident_index:04d}"
+        city = CITIES[(resident_index // 90) % len(CITIES)]
         for name in names:
             key = (resident_id, name)
             if key in seen:
@@ -52,6 +49,7 @@ def inventory_rows(count: int = TARGET_ROWS) -> list[dict]:
                     "quantity": 1 + (resident_index % 4),
                     "willing_to_lend": True,
                     "condition_note": f"Load-test {name.lower()}",
+                    "city": city,
                 }
             )
             if len(rows) >= count:
@@ -70,6 +68,7 @@ def resident_rows(rows: list[dict] | None = None) -> list[dict]:
                 "name": row["resident_name"],
                 "x": row["x"],
                 "y": row["y"],
+                "city": row.get("city") or "",
             },
         )
     return list(found.values())

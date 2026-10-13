@@ -267,9 +267,11 @@ function HandoffActivityCard({
 }: {
   handoff: HandoffRecord
   requestQuantity: number
-  onAdvance: () => void
+  onAdvance: () => Promise<string | null>
 }) {
   const titleId = useId()
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const complete = isHandoffComplete(handoff.status)
   const action = handoffActionLabel(handoff.status)
   const Icon = complete || handoff.status === 'Confirmed' ? Check : Clock
@@ -344,9 +346,24 @@ function HandoffActivityCard({
         <StatusTimeline steps={handoffStatusSteps} current={handoff.status} />
         <p className="loan-state-copy">{handoffStatusCopy(handoff, requestQuantity)}</p>
         {action ? (
-          <button type="button" className="loan-lender" onClick={onAdvance}>
-            {action}
-          </button>
+          <>
+            <button
+              type="button"
+              className="loan-lender"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                setNote(null)
+                void onAdvance().then((message) => {
+                  setNote(message)
+                  setBusy(false)
+                })
+              }}
+            >
+              {busy ? 'Saving…' : action}
+            </button>
+            {note ? <p className="hint loan-lender-hint">{note}</p> : null}
+          </>
         ) : (
           <p className="activity-success" role="status">
             Handoff completed

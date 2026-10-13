@@ -135,9 +135,7 @@ export function ExchangeCard({
             }
             onEdit={onEdit}
             onArrange={() => undefined}
-            onAdvance={() => {
-              if (handoff) void advanceHandoff(handoff.id)
-            }}
+            onAdvance={() => (handoff ? advanceHandoff(handoff.id) : Promise.resolve(null))}
           />
         </div>
       ) : null}
@@ -333,7 +331,7 @@ function ExchangeMatches({
   onToggle: (id: string) => void
   onEdit: () => void
   onArrange: (parts: HandoffPart[]) => void
-  onAdvance: () => void
+  onAdvance: () => Promise<string | null>
 }) {
   const headingId = useId()
   const claimedIds = new Set(handoff?.parts.map((part) => part.listingId) ?? [])
@@ -575,9 +573,11 @@ function HandoffReceipt({
 }: {
   request: ExchangeRequest
   handoff: HandoffRecord
-  onAdvance: () => void
+  onAdvance: () => Promise<string | null>
 }) {
   const statusRef = useRef<HTMLDivElement>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const complete = isHandoffComplete(handoff.status)
   const action = handoffActionLabel(handoff.status)
   const Icon = complete || handoff.status === 'Confirmed' ? Check : Clock
@@ -625,9 +625,24 @@ function HandoffReceipt({
         ))}
       </ul>
       {action ? (
-        <button type="button" className="loan-lender" onClick={onAdvance}>
-          {action}
-        </button>
+        <>
+          <button
+            type="button"
+            className="loan-lender"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true)
+              setNote(null)
+              void onAdvance().then((message) => {
+                setNote(message)
+                setBusy(false)
+              })
+            }}
+          >
+            {busy ? 'Saving…' : action}
+          </button>
+          {note ? <p className="hint loan-lender-hint">{note}</p> : null}
+        </>
       ) : (
         <p className="activity-success" role="status">
           Handoff completed

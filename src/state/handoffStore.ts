@@ -13,7 +13,7 @@ export type HandoffStore = {
   handoffs: readonly HandoffRecord[]
   /** Publishes the pending request, or a fresh one when the draft was edited, and matches it. */
   confirmExchange: (draft: ExchangeDraft, pendingRequestId: string | null) => Promise<ConfirmedExchange>
-  advanceHandoff: (handoffId: string) => Promise<void>
+  advanceHandoff: (handoffId: string) => Promise<string | null>
 }
 
 export const HandoffContext = createContext<HandoffStore | null>(null)

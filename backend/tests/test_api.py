@@ -137,13 +137,33 @@ def test_confirm_publishes_the_named_request_not_the_latest(client):
 
 
 def test_loan_conflict_pickup_and_return(client):
+    offered = client.post(
+        "/api/inventory",
+        json={
+            "resident_id": "jordan",
+            "name": "Drill",
+            "category": "Tools",
+            "quantity": 2,
+            "condition": "Good",
+            "notes": "",
+            "available_to_lend": True,
+        },
+    )
+    assert offered.status_code == 201, offered.text
     body = {
         "borrower_id": "avery",
         "lender_id": "jordan",
         "catalog_item_id": "drill",
+        "inventory_id": offered.json()["inventory_id"],
         "window_start": "2026-10-17T09:00:00",
         "window_end": "2026-10-17T11:00:00",
     }
+    missing = client.post("/api/loans", json={**body, "lender_id": "nobody"})
+    assert missing.status_code == 404
+    self_borrow = client.post("/api/loans", json={**body, "borrower_id": "jordan"})
+    assert self_borrow.status_code == 400
+    too_many = client.post("/api/loans", json={**body, "quantity": 999})
+    assert too_many.status_code == 400
     first = client.post("/api/loans", json=body)
     assert first.status_code == 201
     assert first.json()["status"] == "requested"
@@ -252,7 +272,7 @@ def test_local_dataset_covers_heavy_inventory(client):
     block = client.get("/api/neighborhood").json()
     assert block["snowflake"] == "not_configured"
     assert block["items"]
-    assert all(row["distance"] <= 25 for row in block["items"])
+    assert all(row["distance"] <= 400 for row in block["items"])
     assert all(row["catalog_item"] != "Drill" for row in block["items"])
     everyone = client.get("/api/inventory").json()
     assert everyone["snowflake"] == "not_configured"

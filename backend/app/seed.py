@@ -119,6 +119,16 @@ CATALOG = (
         "demo_price_cents": 7000,
         "default_loan_hours": 4,
     },
+    {"id": "chair", "name": "Chair", "aliases": ["chair", "chairs"], "category": "household", "demo_price_cents": 2500, "default_loan_hours": 48},
+    {"id": "bike", "name": "Bike", "aliases": ["bike", "bicycle"], "category": "sports", "demo_price_cents": 15000, "default_loan_hours": 8},
+    {"id": "tent", "name": "Tent", "aliases": ["tent"], "category": "sports", "demo_price_cents": 12000, "default_loan_hours": 48},
+    {"id": "cooler", "name": "Cooler", "aliases": ["cooler"], "category": "household", "demo_price_cents": 4000, "default_loan_hours": 24},
+    {"id": "blender", "name": "Blender", "aliases": ["blender"], "category": "kitchen", "demo_price_cents": 4500, "default_loan_hours": 8},
+    {"id": "fan", "name": "Fan", "aliases": ["fan"], "category": "household", "demo_price_cents": 3000, "default_loan_hours": 24},
+    {"id": "vacuum", "name": "Vacuum", "aliases": ["vacuum", "vacuum cleaner"], "category": "household", "demo_price_cents": 9000, "default_loan_hours": 8},
+    {"id": "stroller", "name": "Stroller", "aliases": ["stroller"], "category": "household", "demo_price_cents": 10000, "default_loan_hours": 8},
+    {"id": "wagon", "name": "Wagon", "aliases": ["wagon"], "category": "garden", "demo_price_cents": 6000, "default_loan_hours": 8},
+    {"id": "air-mattress", "name": "Air mattress", "aliases": ["air mattress"], "category": "household", "demo_price_cents": 3500, "default_loan_hours": 48},
 )
 
 
@@ -205,6 +215,7 @@ def _seed_stock(session: Session) -> None:
                 initials=initials_for(person["name"]),
                 x=person["x"],
                 y=person["y"],
+                city=person.get("city") or "",
             )
         )
     session.add_all(

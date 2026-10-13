@@ -50,23 +50,26 @@ export function HandoffsProvider({ children }: { children: ReactNode }) {
   const advanceHandoff = useCallback(
     async (handoffId: string) => {
       const handoff = activity?.handoffs.find((item) => item.id === handoffId)
-      if (!handoff) return
+      if (!handoff) return 'That handoff is no longer on this list.'
       try {
         if (handoff.status === 'proposed') {
-          // Demo stand-in: confirm for the recipient and every donor who has not yet.
-          const parties = new Set<string>()
-          if (!handoff.recipient_confirmed) parties.add(handoff.recipient_id)
-          for (const row of handoff.allocations) if (!row.donor_confirmed) parties.add(row.resident_id)
-          for (const party of parties) await api.confirmHandoff(handoff.id, party)
+          const mine =
+            handoff.recipient_id === shelfId ||
+            handoff.allocations.some((row) => row.resident_id === shelfId)
+          if (!mine) return 'Only the people in this handoff can confirm it.'
+          await api.confirmHandoff(handoff.id, shelfId)
         } else if (handoff.status === 'confirmed') {
+          if (handoff.recipient_id !== shelfId) return 'Only the person receiving this can mark it received.'
           await api.receiveHandoff(handoff.id)
         }
-      } catch {
-        // Another tab may have moved it first; the refresh below shows the real status.
+      } catch (caught) {
+        await refresh()
+        return caught instanceof Error ? caught.message : 'The handoff could not be updated.'
       }
       await refresh()
+      return null
     },
-    [activity, refresh],
+    [activity, refresh, shelfId],
   )
 
   const value = useMemo(

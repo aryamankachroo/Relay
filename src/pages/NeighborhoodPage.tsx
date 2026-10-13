@@ -15,6 +15,9 @@ import {
 import { givenName, loanStatusCopy, type LoanRequest } from '../data/lending.ts'
 import { useInventory } from '../state/inventoryStore.ts'
 import { useLoanRequests } from '../state/loanStore.ts'
+import { useShelfResident } from '../state/shelfResident.tsx'
+import { api } from '../api/client.ts'
+import type { ApiInventoryItem } from '../api/types.ts'
 
 type MapFilter = 'all' | 'lending' | 'loans'
 
@@ -23,10 +26,39 @@ export function NeighborhoodPage() {
   const panelRef = useRef<HTMLElement>(null)
   const { items } = useInventory()
   const { requests: loans } = useLoanRequests()
+  const shelfId = useShelfResident()
+  const [liveItems, setLiveItems] = useState<ApiInventoryItem[]>([])
   const [selectedId, setSelectedId] = useState<SceneResidentId | null>(null)
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
   const [filter, setFilter] = useState<MapFilter>('all')
   const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    let cancel = false
+    api
+      .neighborhood(shelfId)
+      .then((body) => {
+        if (!cancel) setLiveItems(body.items)
+      })
+      .catch(() => {
+        if (!cancel) setLiveItems([])
+      })
+    return () => {
+      cancel = true
+    }
+  }, [shelfId])
+
+  const cityMatches = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return liveItems.filter((item) => {
+      if (!needle) return true
+      return [item.resident_name, item.catalog_name, item.catalog_item, item.city]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(needle)
+    })
+  }, [liveItems, query])
 
   const links = useMemo(() => shareLinksFromLoans(loans), [loans])
   const lendingIds = useMemo(() => {
@@ -136,10 +168,11 @@ export function NeighborhoodPage() {
             type="search"
             value={query}
             aria-label="Search people, products, and inventory"
-            placeholder="Search people, products, inventory"
+            placeholder="Search your city"
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        <p className="hood-demo-label">{cityMatches.length} listings from people in your city</p>
         <div className="hood-filters" role="group" aria-label="Show residents">
           <FilterButton
             pressed={filter === 'all'}

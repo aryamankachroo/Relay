@@ -141,10 +141,19 @@ CREATE TABLE IF NOT EXISTS RESIDENTS (
 RESIDENTS_COLUMN_DDL = "ALTER TABLE RESIDENTS ADD COLUMN IF NOT EXISTS ASSIGNED_RESIDENT_ID VARCHAR"
 
 
-def upsert_profile(clerk_user_id: str, name: str, email: str, initials: str, street: str) -> str:
-    """Save the Clerk profile and return the existing neighbor this login keeps."""
+def upsert_profile(
+    clerk_user_id: str,
+    name: str,
+    email: str,
+    initials: str,
+    street: str,
+    city: str = "",
+    about: str = "",
+) -> str:
+    """One account keeps its own resident id. It does not borrow a demo neighbor."""
     if not configured():
         raise SnowflakeError("Snowflake is not configured")
+    assigned = clerk_user_id
     try:
         with _connect() as conn:
             cursor = conn.cursor()
@@ -154,7 +163,6 @@ def upsert_profile(clerk_user_id: str, name: str, email: str, initials: str, str
                 (clerk_user_id,),
             )
             existing = cursor.fetchone()
-            assigned = existing[0] if existing and existing[0] else _next_open_resident(cursor)
             if existing:
                 cursor.execute(
                     """

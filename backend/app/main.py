@@ -34,7 +34,7 @@ from app.logic import (
 )
 from app.models import CatalogItem, Resident
 from app.seed import ensure_extra_inventory, initials_for, seed
-from app.snowflake_store import SnowflakeError, status as snowflake_status, upsert_profile
+from app.snowflake_store import SnowflakeError, configured as snowflake_configured, status as snowflake_status, upsert_profile
 
 
 class ProfileIn(BaseModel):
@@ -43,6 +43,8 @@ class ProfileIn(BaseModel):
     email: str = ""
     initials: str
     street: str = "14 Willow Court"
+    city: str = ""
+    about: str = ""
 
 
 class ResidentIn(BaseModel):
@@ -108,6 +110,17 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+def _profile_out(resident: Resident) -> dict:
+    return {
+        "id": resident.id,
+        "name": resident.name,
+        "resident_id": resident.id,
+        "city": resident.city,
+        "about": resident.about,
+        "onboarded": bool(resident.city.strip()),
+    }
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Relay", lifespan=lifespan)
     app.add_middleware(
@@ -146,18 +159,33 @@ def create_app() -> FastAPI:
                 "initials": row.initials,
                 "x": row.x,
                 "y": row.y,
+                "city": row.city,
             }
             for row in rows
         ]
 
+    @app.get("/api/me")
+    def get_me(clerk_user_id: str, session: Session = Depends(get_session)):
+        resident = session.get(Resident, clerk_user_id)
+        if resident is None:
+            return {"resident_id": None, "city": "", "about": "", "onboarded": False}
+        return _profile_out(resident)
+
     @app.post("/api/me")
     def save_me(body: ProfileIn, session: Session = Depends(get_session)):
-        try:
-            assigned_id = upsert_profile(
-                body.clerk_user_id, body.name, body.email, body.initials, body.street
-            )
-        except SnowflakeError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if snowflake_configured():
+            try:
+                upsert_profile(
+                    body.clerk_user_id,
+                    body.name,
+                    body.email,
+                    body.initials,
+                    body.street,
+                    body.city,
+                    body.about,
+                )
+            except SnowflakeError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
         short_name = body.name.split()[0] if body.name.split() else body.initials
         resident = session.get(Resident, body.clerk_user_id)
         if resident is None:
@@ -175,9 +203,11 @@ def create_app() -> FastAPI:
             resident.short_name = short_name
             resident.street = body.street
             resident.initials = body.initials
+        resident.city = body.city.strip()
+        resident.about = body.about.strip()
         session.add(resident)
         session.commit()
-        return {"id": resident.id, "name": resident.name, "resident_id": assigned_id}
+        return _profile_out(resident)
 
     @app.post("/api/residents", status_code=201)
     def create_resident(body: ResidentIn, session: Session = Depends(get_session)):
